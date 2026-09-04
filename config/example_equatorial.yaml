@@ -1,0 +1,21 @@
+mount:
+  type: equatorial
+
+motors:
+  RA:
+    enabled: true
+  DEC:
+    enabled: true
+  FOCUS:
+    enabled: false
+  AUX1:
+    enabled: false
+  AUX2:
+    enabled: false
+
+controller:
+  type: mock
+  transport: none
+
+camera:
+  enabled: false
