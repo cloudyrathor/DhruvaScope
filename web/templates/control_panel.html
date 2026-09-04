@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DhruvaScope Control Panel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='control_panel.css') }}">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">DHRUVASCOPE / EQUATORIAL MOUNT</p>
+        <h1>Control Panel</h1>
+      </div>
+      <span id="connection" class="status">Connecting…</span>
+    </header>
+
+    <section class="card connection-card">
+      <h2>Connection</h2>
+      <div class="connection-grid">
+        <label>Controller<select id="controller"><option>ESP32</option></select></label>
+        <label>Transport<select id="transport"><option value="mock">Mock (development)</option><option value="wifi">Wi‑Fi</option><option value="bluetooth">Bluetooth</option></select></label>
+        <label id="endpoint-label">ESP32 address<input id="endpoint" placeholder="192.168.4.1 or serial port"></label>
+        <button id="connect">Connect</button>
+        <button id="refresh">Refresh status</button>
+      </div>
+      <p class="hint">Wi‑Fi uses TCP port 9999. Bluetooth uses the host’s paired serial port at 115200 baud. Use Mock until the ESP32 firmware is installed.</p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><h2>Mount Status</h2><span id="mount-type">—</span></div>
+      <div id="motors" class="motor-grid"></div>
+      <button id="emergency" class="danger">Emergency stop all motors</button>
+    </section>
+    <p id="message" class="message"></p>
+  </main>
+  <script src="{{ url_for('static', filename='control_panel.js') }}"></script>
+</body>
+</html>
