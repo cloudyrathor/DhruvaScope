@@ -42,7 +42,7 @@ IPAddress AP_GATEWAY(192, 168, 4, 1);
 IPAddress AP_SUBNET(255, 255, 255, 0);
 // STA mode: the ESP32 joins this existing router network.
 const char *ROUTER_SSID = "AP-2GHz";
-const char *ROUTER_PASSWORD = "131020151984";
+const char *ROUTER_PASSWORD = "************";
 const char *BLUETOOTH_NAME = "DhruvaScope-ESP32";
 
 #if ENABLE_BLUETOOTH
