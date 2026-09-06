@@ -2,32 +2,56 @@
 
 A modular, open-source telescope automation framework for equatorial mounts.
 
-## Status
+DhruvaScope provides an HTML5/Flask control panel for controlling RA, DEC,
+focus, and auxiliary motors, with support planned for ESP32, Arduino, and
+Raspberry Pi.
 
-Early development — architecture and simulated hardware first.
+The framework is designed to grow from basic motor control into:
 
-## Initial motor channels
+- Autonomous telescope tracking
+- Celestial object selection
+- Camera streaming
+- Automated image capture
+- Observation sessions
+- Image stacking
+- Multiple controller platforms
 
-- RA / X
-- DEC / Y
-- FOCUS
-- AUX1
-- AUX2
+## Current Status
 
-## Planned platforms
+🚧 Early development
+
+The first milestone focuses on the software architecture and simulated
+hardware before connecting real telescope motors.
+
+## Planned Hardware
 
 - ESP32
 - Arduino
 - Raspberry Pi
 
-## Planned capabilities
 
-- Manual motor control
-- Autonomous tracking
-- Celestial object selection
-- Camera streaming
-- Automated image capture
-- Image stacking
+## Initial Mount
+
+The first supported mount type is:
+
+**Equatorial Mount**
+
+Initial motor channels:
+
+- RA / X
+- DEC / Y
+- Focus
+- AUX1
+- AUX2
+
+## Technology
+
+- Python
+- Flask
+- HTML5
+- JavaScript
+- OpenCV
+- Serial communication
 
 ## License
 

@@ -21,11 +21,11 @@
       <div class="connection-grid">
         <label>Controller<select id="controller"><option>ESP32</option></select></label>
         <label>Transport<select id="transport"><option value="mock">Mock (development)</option><option value="wifi">Wi‑Fi</option><option value="bluetooth">Bluetooth</option></select></label>
-        <label id="endpoint-label">ESP32 address<input id="endpoint" placeholder="192.168.4.1 or serial port"></label>
+        <label id="endpoint-label">ESP32 address<input id="endpoint" value="192.168.4.1" placeholder="192.168.4.1 or serial port"></label>
         <button id="connect">Connect</button>
         <button id="refresh">Refresh status</button>
       </div>
-      <p class="hint">Wi‑Fi uses TCP port 9999. Bluetooth uses the host’s paired serial port at 115200 baud. Use Mock until the ESP32 firmware is installed.</p>
+      <p class="hint">For the firmware’s default AP, connect this computer to <code>DhruvaScope-ESP32-Test</code>, then use <code>192.168.4.1</code> and TCP port 9999. In router mode, enter the IP printed by the ESP32 Serial Monitor.</p>
     </section>
 
     <section class="card">

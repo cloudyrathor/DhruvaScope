@@ -10,11 +10,13 @@ class WifiTransport(LineTransport):
     def __init__(self, host: str, port: int = 9999, timeout: float = 3.0):
         self.host, self.port, self.timeout = host, port, timeout
         self.socket: socket.socket | None = None
+        self.reader = None
 
     def connect(self) -> None:
         try:
             self.socket = socket.create_connection((self.host, self.port), self.timeout)
             self.socket.settimeout(self.timeout)
+            self.reader = self.socket.makefile("rb")
         except OSError as exc:
             raise DeviceError(f"Wi-Fi connection failed: {exc}") from exc
 
@@ -23,11 +25,17 @@ class WifiTransport(LineTransport):
             self.connect()
         try:
             self.socket.sendall(payload)
-            return self.socket.makefile("rb").readline()
+            response = self.reader.readline()
+            if not response:
+                raise DeviceError("Wi-Fi connection closed by ESP32")
+            return response
         except OSError as exc:
             raise DeviceError(f"Wi-Fi request failed: {exc}") from exc
 
     def close(self) -> None:
+        if self.reader:
+            self.reader.close()
+            self.reader = None
         if self.socket:
             self.socket.close()
             self.socket = None

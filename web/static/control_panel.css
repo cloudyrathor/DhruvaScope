@@ -4,7 +4,8 @@ header, .section-heading, .connection-grid { display: flex; align-items: center;
 h1 { margin: 0 0 24px; font-size: 2.4rem; } h2 { margin-top: 0; font-size: 1.1rem; }
 .eyebrow { color: #7dd3fc; letter-spacing: .12em; font-size: .72rem; } .card { background: #18212b; border: 1px solid #2d3a48; border-radius: 12px; padding: 22px; margin: 18px 0; }
 .status { color: #86efac; } .connection-grid { align-items: end; justify-content: flex-start; flex-wrap: wrap; } label { display: grid; gap: 6px; color: #aab8c7; font-size: .9rem; }
-select, button { border: 1px solid #405266; border-radius: 7px; background: #111923; color: #edf2f7; padding: 10px 12px; font: inherit; } button { cursor: pointer; } button:hover { border-color: #7dd3fc; }
+select, button { border: 1px solid #405266; border-radius: 7px; background: #111923; color: #edf2f7; padding: 10px 12px; font: inherit; } button { cursor: pointer; } button:hover { border-color: #7dd3fc; } button:disabled { cursor: wait; opacity: .65; }
 .hint { color: #92a4b8; font-size: .9rem; } .motor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 18px 0; }
 .motor { border: 1px solid #354557; border-radius: 9px; padding: 15px; } .motor h3 { margin: 0 0 10px; } .motor p { color: #aab8c7; font-size: .88rem; }
+.motor.unavailable { opacity: .55; }
 .motor button { margin: 3px 2px 0 0; padding: 7px 10px; } .danger { background: #7f1d1d; border-color: #ef4444; } .message { min-height: 1.4em; color: #fbbf24; }

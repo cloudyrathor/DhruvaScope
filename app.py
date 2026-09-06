@@ -11,6 +11,9 @@ from openscope.devices.remote import Esp32Device
 from openscope.transport.bluetooth import BluetoothTransport
 from openscope.transport.wifi import WifiTransport
 
+DEFAULT_WIFI_HOST = "192.168.4.1"
+DEFAULT_WIFI_PORT = 9999
+
 
 def create_app(config_path: str | Path | None = None, device=None) -> Flask:
     """Create the DhruvaScope web application with an injectable device."""
@@ -44,19 +47,21 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
             if mode == "mock":
                 device = MockDevice(state)
             elif mode == "wifi":
-                device = Esp32Device(WifiTransport(str(data["host"]), int(data.get("port", 9999))), state)
-                device.status()
+                host = str(data.get("host", DEFAULT_WIFI_HOST)).strip()
+                if not host:
+                    raise ConfigurationError("Wi-Fi address is required (usually 192.168.4.1 in AP mode)")
+                device = Esp32Device(WifiTransport(host, int(data.get("port", DEFAULT_WIFI_PORT))), state)
             elif mode == "bluetooth":
                 device = Esp32Device(BluetoothTransport(str(data["port"]), int(data.get("baudrate", 115200))), state)
-                device.status()
             else:
                 raise ConfigurationError("mode must be mock, wifi, or bluetooth")
+            initial_status = device.status()
             old_device = app.config["TELESCOPE_DEVICE"]
             if hasattr(old_device, "close"):
                 old_device.close()
             app.config["TELESCOPE_DEVICE"] = device
             app.config["CONNECTION_MODE"] = mode
-            return jsonify({"ok": True, "mode": mode, "status": device.status()})
+            return jsonify({"ok": True, "mode": mode, "status": initial_status})
         except (ConfigurationError, DeviceError, KeyError, TypeError, ValueError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
