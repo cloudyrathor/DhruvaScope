@@ -1,6 +1,7 @@
 const motors = document.querySelector('#motors');
 const message = document.querySelector('#message');
 const targetResult = document.querySelector('#target-result');
+const moonResult = document.querySelector('#moon-result');
 const targetTime = document.querySelector('#target-time');
 const liveClock = document.querySelector('#live-clock');
 let targetTimeEdited = false;
@@ -127,6 +128,25 @@ document.querySelector('#calculate-target').addEventListener('click', async () =
       `Altitude: ${target.altitude_deg.toFixed(2)}° · Azimuth: ${target.azimuth_deg.toFixed(2)}°`;
     message.textContent = 'Target calculated successfully.';
   } catch (error) { targetResult.textContent = 'Calculation failed.'; message.textContent = error.message; }
+});
+
+document.querySelector('#calculate-moon').addEventListener('click', async () => {
+  const timeInput = document.querySelector('#target-time').value;
+  if (!timeInput) { message.textContent = 'Choose an observation time.'; return; }
+  const payload = {
+    latitude_deg: Number(document.querySelector('#observer-lat').value),
+    longitude_deg: Number(document.querySelector('#observer-lon').value),
+    elevation_m: Number(document.querySelector('#observer-elevation').value),
+    observation_time: new Date(timeInput).toISOString(),
+  };
+  try {
+    const response = await api('/api/astronomy/moon', {method: 'POST', body: JSON.stringify(payload)});
+    const moon = response.moon;
+    moonResult.textContent = `Moon · ${moon.above_horizon ? 'Above horizon' : 'Below horizon'}\n` +
+      `Apparent RA: ${moon.apparent_ra_deg.toFixed(4)}° · DEC: ${moon.apparent_dec_deg.toFixed(4)}°\n` +
+      `Altitude: ${moon.altitude_deg.toFixed(2)}° · Azimuth: ${moon.azimuth_deg.toFixed(2)}° · Distance: ${Math.round(moon.distance_km).toLocaleString()} km`;
+    message.textContent = 'Moon position calculated successfully.';
+  } catch (error) { moonResult.textContent = 'Moon calculation failed.'; message.textContent = error.message; }
 });
 
 setDefaultTargetTime();

@@ -37,6 +37,23 @@ def test_astronomy_target_endpoint_validates_coordinate_workflow():
     assert response.get_json()["target"]["name"] == "Test Star"
 
 
+def test_moon_endpoint_returns_current_position():
+    import pytest
+
+    pytest.importorskip("astropy")
+    client = create_app().test_client()
+    response = client.post(
+        "/api/astronomy/moon",
+        json={
+            "latitude_deg": 0.0,
+            "longitude_deg": 0.0,
+            "observation_time": "2025-01-01T00:00:00Z",
+        },
+    )
+    assert response.status_code == 200
+    assert response.get_json()["moon"]["name"] == "Moon"
+
+
 def test_wifi_connection_uses_default_ap_address(monkeypatch):
     seen = {}
 

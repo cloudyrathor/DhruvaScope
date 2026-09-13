@@ -69,3 +69,21 @@ def test_astronomy_service_calculates_fixed_target():
     assert -90.0 <= solution.altitude_deg <= 90.0
     assert 0.0 <= solution.azimuth_deg < 360.0
 
+
+def test_moon_service_calculates_current_position():
+    import pytest
+
+    pytest.importorskip("astropy")
+    from openscope.tracking.astronomy import ObserverLocation
+    from openscope.tracking.moon import MoonService
+
+    solution = MoonService().calculate(
+        ObserverLocation(0.0, 0.0),
+        "2025-01-01T00:00:00Z",
+    )
+
+    assert 0.0 <= solution.apparent_ra_deg < 360.0
+    assert -90.0 <= solution.apparent_dec_deg <= 90.0
+    assert -90.0 <= solution.altitude_deg <= 90.0
+    assert 0.0 <= solution.azimuth_deg < 360.0
+    assert solution.distance_km > 300000

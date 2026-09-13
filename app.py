@@ -11,6 +11,7 @@ from openscope.devices.remote import Esp32Device
 from openscope.transport.bluetooth import BluetoothTransport
 from openscope.transport.wifi import WifiTransport
 from openscope.tracking.astronomy import AstronomyService, EquatorialTarget, ObserverLocation
+from openscope.tracking.moon import MoonService
 from openscope.tracking.tracker import SiderealTracker
 from openscope.motion.controller import MotionController
 
@@ -25,6 +26,7 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
     state = telescope_state_from_config(load_yaml(path))
     app.config["TELESCOPE_DEVICE"] = device or MockDevice(state)
     app.config["ASTRONOMY_SERVICE"] = AstronomyService()
+    app.config["MOON_SERVICE"] = MoonService()
     app.config["MOTION_CONTROLLER"] = MotionController(app.config["TELESCOPE_DEVICE"], state)
     app.config["SIDEREAL_TRACKER"] = SiderealTracker(
         app.config["TELESCOPE_DEVICE"], motion=app.config["MOTION_CONTROLLER"]
@@ -131,6 +133,24 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
                 mount_type=state.mount_type,
             )
             return jsonify({"ok": True, "target": solution.as_dict()})
+        except (ConfigurationError, KeyError, TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/astronomy/moon")
+    def calculate_moon():
+        data = request.get_json(silent=True) or {}
+        try:
+            observer = ObserverLocation(
+                latitude_deg=float(data["latitude_deg"]),
+                longitude_deg=float(data["longitude_deg"]),
+                elevation_m=float(data.get("elevation_m", 0.0)),
+            )
+            solution = app.config["MOON_SERVICE"].calculate(
+                observer,
+                data["observation_time"],
+                mount_type=state.mount_type,
+            )
+            return jsonify({"ok": True, "moon": solution.as_dict()})
         except (ConfigurationError, KeyError, TypeError, ValueError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 

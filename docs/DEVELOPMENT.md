@@ -52,4 +52,12 @@ by any firmware or host module. The target panel displays a live local/UTC
 clock and refreshes the default observation time every second until the user
 edits it.
 
+## Milestone 7 — Moon tracking
+
+The first M7 slice calculates the Moon's topocentric apparent RA/DEC,
+altitude, azimuth, and distance through `POST /api/astronomy/moon`. The UI
+provides a Moon position preview using the observer settings and observation
+time from the M6.5 panel. This slice does not start motors or implement
+periodic Moon rate updates yet.
+
 Do not skip milestones.

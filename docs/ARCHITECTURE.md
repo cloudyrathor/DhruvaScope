@@ -45,3 +45,10 @@ updates to `TelescopeDevice`. Firmware generates STEP/DIR pulses without
 requiring encoder or position feedback. Feedback may be added as an optional
 telemetry capability later; it must not become a prerequisite for UI movement,
 sidereal tracking, or safety stop commands.
+
+## M7 Moon boundary
+
+`MoonService` owns Moon ephemeris calculation and returns a position solution.
+It has no dependency on `MotionController`, `TelescopeDevice`, or firmware.
+The first M7 UI/API slice is calculation-only; motor tracking will be added
+after position refresh and rate-conversion behavior are validated.
