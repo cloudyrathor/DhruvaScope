@@ -34,6 +34,9 @@ class Esp32Device(TelescopeDevice):
     def set_speed(self, motor_id: str, speed: float) -> None:
         self._request("SET_SPEED", motor=motor_id, speed=speed)
 
+    def set_rate(self, motor_id: str, rate: float) -> None:
+        self._request("SET_RATE", motor=motor_id, rate=rate)
+
     def enable(self, motor_id: str) -> None:
         self._request("ENABLE", motor=motor_id)
 

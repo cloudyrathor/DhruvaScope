@@ -20,6 +20,9 @@ class TelescopeDevice(ABC):
     def set_speed(self, motor_id: str, speed: float) -> None: ...
 
     @abstractmethod
+    def set_rate(self, motor_id: str, rate: float) -> None: ...
+
+    @abstractmethod
     def enable(self, motor_id: str) -> None: ...
 
     @abstractmethod

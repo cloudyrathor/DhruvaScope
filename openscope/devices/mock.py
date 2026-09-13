@@ -32,6 +32,11 @@ class MockDevice(TelescopeDevice):
         motor.set_speed(speed)
         self.command_log.append(("SET_SPEED", motor_id, speed))
 
+    def set_rate(self, motor_id: str, rate: float) -> None:
+        motor = self.state.motor(motor_id)
+        motor.set_speed(rate)
+        self.command_log.append(("SET_RATE", motor_id, rate))
+
     def enable(self, motor_id: str) -> None:
         motor = self.state.motor(motor_id)
         motor.enabled = True

@@ -84,6 +84,17 @@ MOVE RA POS 0.030 deg/s (continuous until STOP)
 
 `MOVE` continues until a `STOP` command is received.
 
+The firmware is intentionally open-loop. It does not require encoders or
+position sensors. `SET_RATE` updates the continuous rate of an already moving
+axis without adding any feedback dependency:
+
+```json
+{"v":1,"id":4,"cmd":"SET_RATE","motor":"RA","rate":0.004178}
+```
+
+Feedback, if added later, must be an optional capability. Basic movement,
+sidereal tracking, and UI control must continue to work without it.
+
 ## Standalone motor test
 
 File: `stepper_diagnostic/stepper_diagnostic.ino`

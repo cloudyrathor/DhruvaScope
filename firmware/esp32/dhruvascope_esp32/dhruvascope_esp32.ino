@@ -83,7 +83,7 @@ void stopChannel(Channel *channel) { if (channel) { channel->moving = false; cha
 void stopAll() { for (auto &channel : channels) stopChannel(&channel); setDriverEnabled(false); }
 
 String statusJson() {
-  String data = "{\"device\":\"DhruvaScope-ESP32\",\"motors\":{";
+  String data = "{\"device\":\"DhruvaScope-ESP32\",\"feedback\":false,\"motors\":{";
   const size_t channelCount = sizeof(channels) / sizeof(channels[0]);
   for (size_t i = 0; i < channelCount; i++) { if (i) data += ","; data += "\"" + String(channels[i].id) + "\":{";
     data += "\"available\":" + String(channels[i].stepPin != 255 ? "true" : "false");
@@ -105,7 +105,8 @@ void command(Stream &out, const String &line) {
   Channel *channel = findChannel(motorId); if (!channel) { reply(out, id, "ERROR", "{}", "UNKNOWN_MOTOR"); return; }
   if (channel->stepPin == 255) { reply(out, id, "ERROR", "{}", "MOTOR_NOT_WIRED"); return; }
   if (cmd == "ENABLE" || cmd == "DISABLE") { channel->enabled = cmd == "ENABLE"; stopChannel(channel); if (cmd == "DISABLE") setDriverEnabled(false); reply(out, id, "OK"); return; }
-  if (cmd == "SET_SPEED" || cmd == "MOVE") { float speed = field(line, "speed").toFloat();
+  if (cmd == "SET_RATE" || cmd == "SET_SPEED" || cmd == "MOVE") {
+    float speed = cmd == "SET_RATE" ? field(line, "rate").toFloat() : field(line, "speed").toFloat();
     if (!channel->enabled || speed <= 0 || speed > MAX_SPEED_DEG_PER_SECOND) { reply(out, id, "ERROR", "{}", "INVALID_SPEED_OR_DISABLED"); return; }
     channel->speed = speed;
     if (cmd == "MOVE") {
@@ -117,6 +118,8 @@ void command(Stream &out, const String &line) {
       Serial.print("MOVE "); Serial.print(channel->id);
       Serial.print(channel->positive ? " POS " : " NEG "); Serial.print(speed, 3);
       Serial.println(" deg/s (continuous until STOP)");
+    } else if (cmd == "SET_RATE") {
+      Serial.print("RATE "); Serial.print(channel->id); Serial.print(" "); Serial.print(speed, 6); Serial.println(" deg/s");
     }
     reply(out, id, "OK"); return; }
   reply(out, id, "ERROR", "{}", "UNKNOWN_COMMAND");
