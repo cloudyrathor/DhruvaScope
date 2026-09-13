@@ -52,6 +52,28 @@ by any firmware or host module. The target panel displays a live local/UTC
 clock and refreshes the default observation time every second until the user
 edits it.
 
+The target panel also uses the offline starter catalog at
+`GET /api/catalog/objects`. Selecting an entry fills its fixed RA/DEC values;
+this is target selection and calculation only, not GoTo or motor tracking.
+The `Visible now` filter applies the observer location and observation time to
+the local catalog and sorts matching objects by altitude. It currently covers
+the bundled fixed-object catalog; external SIMBAD/VizieR/Gaia expansion will
+use the same visibility contract.
+The dropdown also includes dynamically calculated Sun, Moon, and planetary
+entries when observer location and observation time are supplied; these are
+never stored as fixed catalog coordinates.
+The UI renders entries as structured options and keeps the selected object in
+the loaded catalog cache, avoiding a second lookup when the dropdown changes.
+The catalog selector and `Visible now` checkbox use separate layout rules so
+they remain readable on narrow and wide screens.
+
+## M6.6 — Mount alignment and position model
+
+M6.6 adds an open-loop mount alignment reference. After manually pointing the
+telescope at the selected object, use **Set current position** to store its
+RA/DEC in host state. This does not move motors and does not require encoders;
+it establishes the reference needed by the future GoTo milestone.
+
 ## Milestone 7 — Moon tracking
 
 The first M7 slice calculates the Moon's topocentric apparent RA/DEC,

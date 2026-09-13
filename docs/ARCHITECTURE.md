@@ -52,3 +52,13 @@ sidereal tracking, or safety stop commands.
 It has no dependency on `MotionController`, `TelescopeDevice`, or firmware.
 The first M7 UI/API slice is calculation-only; motor tracking will be added
 after position refresh and rate-conversion behavior are validated.
+
+The catalog endpoint is local and offline-first. External providers can later
+extend it without changing the UI selection contract.
+
+## M6.6 alignment boundary
+
+Mount alignment is stored in host `TelescopeState` as an open-loop RA/DEC
+reference. It is deliberately independent of firmware feedback and does not
+claim that the motor position is measured. GoTo may use this reference later;
+M6.6 itself only records the manually established coordinate.

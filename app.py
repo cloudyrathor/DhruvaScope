@@ -3,6 +3,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 from openscope.configuration import load_yaml, telescope_state_from_config
+from openscope.catalog import list_catalog_objects, list_solar_system_objects, list_visible_catalog_objects
 from openscope.core.errors import ConfigurationError
 from openscope.core.errors import DeviceError
 from openscope.core.motor import MotorDirection
@@ -44,10 +45,64 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
     def motors():
         return jsonify(app.config["TELESCOPE_DEVICE"].status()["motors"])
 
+    @app.get("/api/mount/position")
+    def mount_position():
+        return jsonify(state.alignment.as_dict())
+
+    @app.post("/api/mount/align")
+    def align_mount():
+        data = request.get_json(silent=True) or {}
+        try:
+            state.alignment.set_position(
+                float(data["ra_deg"]),
+                float(data["dec_deg"]),
+                str(data.get("source", "manual")),
+            )
+            return jsonify({"ok": True, "alignment": state.alignment.as_dict()})
+        except (ConfigurationError, KeyError, TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
     @app.get("/api/connection")
     def connection():
         device = app.config["TELESCOPE_DEVICE"]
         return jsonify({"mode": app.config.get("CONNECTION_MODE", "mock"), "device": type(device).__name__})
+
+    @app.get("/api/catalog/objects")
+    def catalog_objects():
+        query = request.args.get("q", "")
+        if "observation_time" in request.args:
+            try:
+                observer = ObserverLocation(
+                    latitude_deg=float(request.args["latitude_deg"]),
+                    longitude_deg=float(request.args["longitude_deg"]),
+                    elevation_m=float(request.args.get("elevation_m", 0.0)),
+                )
+                observation_time = request.args["observation_time"]
+                visible_only = request.args.get("visible", "false").lower() == "true"
+                fixed_objects = (
+                    list_visible_catalog_objects(observer, observation_time)
+                    if visible_only
+                    else list_catalog_objects()
+                )
+                solar_objects = list_solar_system_objects(observer, observation_time)
+                objects = fixed_objects + (
+                    [obj for obj in solar_objects if obj["above_horizon"]]
+                    if visible_only
+                    else solar_objects
+                )
+                if query:
+                    needle = query.casefold()
+                    objects = [
+                        obj for obj in objects
+                        if needle in str(obj["id"]).casefold()
+                        or needle in str(obj["name"]).casefold()
+                        or needle in str(obj["object_type"]).casefold()
+                    ]
+                objects.sort(key=lambda obj: float(obj.get("altitude_deg", -999.0)), reverse=True)
+                return jsonify({"objects": objects, "visible_only": visible_only})
+            except (ConfigurationError, KeyError, TypeError, ValueError) as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify({"objects": list_catalog_objects(query), "visible_only": False})
 
     @app.post("/api/connect")
     def connect():

@@ -1,10 +1,15 @@
 const motors = document.querySelector('#motors');
 const message = document.querySelector('#message');
 const targetResult = document.querySelector('#target-result');
+const catalogSelect = document.querySelector('#catalog-object');
+const visibleOnly = document.querySelector('#visible-only');
 const moonResult = document.querySelector('#moon-result');
 const targetTime = document.querySelector('#target-time');
 const liveClock = document.querySelector('#live-clock');
+const alignmentStatus = document.querySelector('#alignment-status');
+const alignSelectedButton = document.querySelector('#align-selected');
 let targetTimeEdited = false;
+let catalogObjects = [];
 
 async function api(path, options = {}) {
   const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...options});
@@ -36,10 +41,99 @@ function render(data, connection) {
 
 async function refresh() {
   try {
-    const [status, connection] = await Promise.all([api('/api/status'), api('/api/connection')]);
+    const [status, connection, alignment] = await Promise.all([api('/api/status'), api('/api/connection'), api('/api/mount/position')]);
     render(status, connection);
+    renderAlignment(alignment);
   } catch (error) { message.textContent = error.message; }
 }
+
+function renderAlignment(alignment) {
+  alignmentStatus.textContent = alignment.aligned
+    ? `Aligned · RA ${alignment.ra_deg.toFixed(4)}° · DEC ${alignment.dec_deg.toFixed(4)}° · ${alignment.source}`
+    : 'Mount position is not aligned.';
+  alignmentStatus.classList.toggle('aligned', alignment.aligned);
+}
+
+function applyCatalogObject(object) {
+  document.querySelector('#target-name').value = `${object.id} — ${object.name}`;
+  document.querySelector('#target-ra').value = object.ra_deg;
+  document.querySelector('#target-dec').value = object.dec_deg;
+  message.textContent = `${object.name} selected. Calculate it to check visibility.`;
+}
+
+function renderCatalog(objects) {
+  catalogObjects = objects;
+  catalogSelect.replaceChildren();
+  catalogSelect.disabled = objects.length === 0;
+  for (const object of objects) {
+    const option = document.createElement('option');
+    option.value = object.id;
+    option.textContent = `${object.id} — ${object.name} (${object.object_type}${object.altitude_deg === undefined ? '' : `, ${object.altitude_deg.toFixed(1)}° alt`})`;
+    catalogSelect.appendChild(option);
+  }
+  if (objects.length > 0) {
+    catalogSelect.value = objects[0].id;
+    applyCatalogObject(objects[0]);
+  } else {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = visibleOnly.checked ? 'No objects currently visible' : 'Catalog is empty';
+    catalogSelect.appendChild(option);
+    message.textContent = visibleOnly.checked
+      ? 'No local catalog objects are above the horizon for this time.'
+      : 'No catalog objects are available.';
+  }
+}
+
+async function loadCatalog() {
+  try {
+    const params = new URLSearchParams();
+    if (visibleOnly.checked) params.set('visible', 'true');
+    params.set('latitude_deg', document.querySelector('#observer-lat').value);
+    params.set('longitude_deg', document.querySelector('#observer-lon').value);
+    params.set('elevation_m', document.querySelector('#observer-elevation').value);
+    params.set('observation_time', new Date(document.querySelector('#target-time').value).toISOString());
+    const response = await api(`/api/catalog/objects?${params.toString()}`);
+    renderCatalog(response.objects || []);
+  } catch (error) {
+    catalogObjects = [];
+    catalogSelect.replaceChildren();
+    catalogSelect.disabled = true;
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Catalog unavailable';
+    catalogSelect.appendChild(option);
+    message.textContent = error.message;
+  }
+}
+
+catalogSelect.addEventListener('change', () => {
+  const selected = catalogObjects.find((object) => object.id === catalogSelect.value);
+  if (selected) applyCatalogObject(selected);
+});
+
+alignSelectedButton.addEventListener('click', async () => {
+  const name = document.querySelector('#target-name').value.trim();
+  const ra = Number(document.querySelector('#target-ra').value);
+  const dec = Number(document.querySelector('#target-dec').value);
+  if (!name || !Number.isFinite(ra) || !Number.isFinite(dec)) {
+    message.textContent = 'Select an object before setting mount alignment.';
+    return;
+  }
+  try {
+    const response = await api('/api/mount/align', {
+      method: 'POST',
+      body: JSON.stringify({name, ra_deg: ra, dec_deg: dec, source: name}),
+    });
+    renderAlignment(response.alignment);
+    message.textContent = `Mount aligned to ${name}.`;
+  } catch (error) { message.textContent = error.message; }
+});
+
+visibleOnly.addEventListener('change', loadCatalog);
+['observer-lat', 'observer-lon', 'observer-elevation', 'target-time'].forEach((id) => {
+  document.querySelector(`#${id}`).addEventListener('change', loadCatalog);
+});
 document.querySelector('#transport').addEventListener('change', (event) => {
   const endpoint = document.querySelector('#endpoint');
   const connectionLabel = document.querySelector('#connection');
@@ -154,3 +248,4 @@ targetTime.addEventListener('input', () => { targetTimeEdited = true; });
 refreshClock();
 setInterval(refreshClock, 1000);
 refresh();
+loadCatalog();

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DhruvaScope Control Panel</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='control_panel.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='control_panel.css', v='catalog-ui-2') }}">
 </head>
 <body>
   <main>
@@ -40,6 +40,8 @@
     <section class="card">
       <div class="section-heading"><h2>Target calculation</h2><span>M6.5</span></div>
       <div class="target-grid">
+        <label>Catalog object<select id="catalog-object"><option value="">Loading catalog…</option></select></label>
+        <label class="checkbox-label"><input id="visible-only" type="checkbox"><span>Visible now</span></label>
         <label>Name<input id="target-name" value="Test target" placeholder="M31 or test target"></label>
         <label>RA (degrees)<input id="target-ra" type="number" min="0" max="359.999999" step="0.000001" value="10.6847"></label>
         <label>DEC (degrees)<input id="target-dec" type="number" min="-90" max="90" step="0.000001" value="41.2687"></label>
@@ -48,9 +50,16 @@
         <label>Elevation (m)<input id="observer-elevation" type="number" step="1" value="0"></label>
         <label>Observation time (local)<input id="target-time" type="datetime-local"></label>
       </div>
-      <button id="calculate-target">Calculate target</button>
+      <button id="calculate-target">Calculate selected object</button>
       <div id="target-result" class="target-result" aria-live="polite">No target calculated.</div>
       <p class="hint">This calculates coordinates only. It does not start motors or require feedback sensors.</p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><h2>Mount alignment</h2><span>M6.6</span></div>
+      <div class="alignment-status" id="alignment-status">Mount position is not aligned.</div>
+      <button id="align-selected">Set current position to selected object</button>
+      <p class="hint">First point the telescope manually at the selected object. This stores an open-loop RA/DEC reference; no feedback sensor is required.</p>
     </section>
 
     <section class="card">
@@ -62,6 +71,6 @@
 
     <p id="message" class="message"></p>
   </main>
-  <script src="{{ url_for('static', filename='control_panel.js') }}"></script>
+  <script src="{{ url_for('static', filename='control_panel.js', v='catalog-ui-2') }}"></script>
 </body>
 </html>

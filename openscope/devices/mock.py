@@ -53,6 +53,7 @@ class MockDevice(TelescopeDevice):
     def status(self) -> dict[str, Any]:
         return {
             "mount_type": self.state.mount_type,
+            "alignment": self.state.alignment.as_dict(),
             "motors": {
                 motor_id: {
                     "enabled": motor.enabled,

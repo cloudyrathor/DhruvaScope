@@ -10,6 +10,45 @@ def test_control_panel_and_status_endpoint():
     assert len(response.get_json()["motors"]) == 5
 
 
+def test_catalog_endpoint_returns_searchable_objects():
+    client = create_app().test_client()
+    response = client.get("/api/catalog/objects?q=M31")
+    assert response.status_code == 200
+    objects = response.get_json()["objects"]
+    assert len(objects) == 1
+    assert objects[0]["name"] == "Andromeda Galaxy"
+
+
+def test_mount_alignment_endpoint_stores_current_position():
+    client = create_app().test_client()
+    response = client.post(
+        "/api/mount/align",
+        json={"ra_deg": 10.6847, "dec_deg": 41.2687, "source": "M31"},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["alignment"]["aligned"] is True
+    assert client.get("/api/mount/position").get_json()["source"] == "M31"
+
+
+def test_catalog_endpoint_rejects_visible_query_without_observer_data():
+    client = create_app().test_client()
+    response = client.get("/api/catalog/objects?visible=true")
+    assert response.status_code == 400
+
+
+def test_catalog_endpoint_returns_dynamic_solar_system_objects():
+    import pytest
+
+    pytest.importorskip("astropy")
+    client = create_app().test_client()
+    response = client.get(
+        "/api/catalog/objects?latitude_deg=0&longitude_deg=0&observation_time=2025-01-01T00:00:00Z"
+    )
+    assert response.status_code == 200
+    ids = {item["id"] for item in response.get_json()["objects"]}
+    assert {"MERCURY", "VENUS", "MARS", "JUPITER", "SATURN", "URANUS", "NEPTUNE"}.issubset(ids)
+
+
 def test_api_validates_commands_and_supports_stop():
     client = create_app().test_client()
     assert client.post("/api/motor/RA/move", json={"direction": "POS", "speed": 1}).status_code == 200

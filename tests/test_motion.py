@@ -41,3 +41,13 @@ def test_motion_controller_updates_open_loop_ra_dec_rates_without_feedback():
     controller.set_rate_pair(0.0, 0.0)
     assert state.motor("RA").state is MotorState.IDLE
     assert state.motor("DEC").state is MotorState.IDLE
+
+
+def test_mount_alignment_stores_open_loop_coordinates_without_feedback():
+    state = TelescopeState.with_default_channels({"RA": True, "DEC": True})
+    state.alignment.set_position(10.6847, 41.2687, "M31")
+
+    assert state.alignment.aligned is True
+    assert state.alignment.ra_deg == 10.6847
+    assert state.alignment.dec_deg == 41.2687
+    assert state.alignment.as_dict()["feedback_required"] is False
