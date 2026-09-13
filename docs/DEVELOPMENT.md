@@ -15,4 +15,41 @@ Five-channel manual motor control.
 ## Milestone 3
 Versioned serial protocol and ESP32 single-axis control.
 
+## Milestone 5 — Equatorial tracking
+
+The first M5 slice implements host-side sidereal-rate tracking for the RA axis.
+`SiderealTracker` uses the existing `TelescopeDevice` abstraction and does not
+contain astronomy catalogue, Moon, planetary, GoTo, or database logic.
+
+Available API endpoints:
+
+- `GET /api/tracking`
+- `POST /api/tracking/sidereal/start`
+- `POST /api/tracking/stop`
+
+The default sidereal rate is `15.041067 / 3600` degrees per second. Hardware
+validation remains pending until the ESP32 rate, position, and safety behavior
+are verified under load.
+
+## Milestone 6 — Astronomical target calculations
+
+The first M6 slice adds an Astropy-backed coordinate workflow for fixed
+equatorial targets. It accepts target RA/DEC, observer latitude/longitude/
+elevation, UTC observation time, and equatorial mount configuration. It returns
+apparent RA/DEC plus local altitude, azimuth, and horizon visibility.
+
+The endpoint is `POST /api/astronomy/target`. This slice does not query SIMBAD,
+VizieR, or Gaia, and does not implement SQLite persistence, Moon/planetary
+ephemerides, GoTo, or plate solving.
+
+## M6.5 — Open-loop tracking hardening
+
+M6.5 adds the target-calculation panel, a reusable `MotionController`, and
+dynamic signed RA/DEC rate updates through `POST /api/tracking/rates`. The
+minimum hardware path uses software enable/speed checks and continuous STEP/DIR
+control only. Encoders and position sensors are optional and are not required
+by any firmware or host module. The target panel displays a live local/UTC
+clock and refreshes the default observation time every second until the user
+edits it.
+
 Do not skip milestones.

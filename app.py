@@ -10,6 +10,9 @@ from openscope.devices.mock import MockDevice
 from openscope.devices.remote import Esp32Device
 from openscope.transport.bluetooth import BluetoothTransport
 from openscope.transport.wifi import WifiTransport
+from openscope.tracking.astronomy import AstronomyService, EquatorialTarget, ObserverLocation
+from openscope.tracking.tracker import SiderealTracker
+from openscope.motion.controller import MotionController
 
 DEFAULT_WIFI_HOST = "192.168.4.1"
 DEFAULT_WIFI_PORT = 9999
@@ -21,6 +24,11 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
     path = Path(config_path or Path(__file__).parent / "config" / "example_equatorial.yaml")
     state = telescope_state_from_config(load_yaml(path))
     app.config["TELESCOPE_DEVICE"] = device or MockDevice(state)
+    app.config["ASTRONOMY_SERVICE"] = AstronomyService()
+    app.config["MOTION_CONTROLLER"] = MotionController(app.config["TELESCOPE_DEVICE"], state)
+    app.config["SIDEREAL_TRACKER"] = SiderealTracker(
+        app.config["TELESCOPE_DEVICE"], motion=app.config["MOTION_CONTROLLER"]
+    )
 
     @app.get("/")
     def index():
@@ -60,6 +68,8 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
             if hasattr(old_device, "close"):
                 old_device.close()
             app.config["TELESCOPE_DEVICE"] = device
+            app.config["MOTION_CONTROLLER"] = MotionController(device, state)
+            app.config["SIDEREAL_TRACKER"] = SiderealTracker(device, motion=app.config["MOTION_CONTROLLER"])
             app.config["CONNECTION_MODE"] = mode
             return jsonify({"ok": True, "mode": mode, "status": initial_status})
         except (ConfigurationError, DeviceError, KeyError, TypeError, ValueError) as exc:
@@ -71,8 +81,70 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
         if hasattr(device, "close"):
             device.close()
         app.config["TELESCOPE_DEVICE"] = MockDevice(state)
+        app.config["MOTION_CONTROLLER"] = MotionController(app.config["TELESCOPE_DEVICE"], state)
+        app.config["SIDEREAL_TRACKER"] = SiderealTracker(
+            app.config["TELESCOPE_DEVICE"], motion=app.config["MOTION_CONTROLLER"]
+        )
         app.config["CONNECTION_MODE"] = "mock"
         return jsonify({"ok": True, "mode": "mock"})
+
+    @app.get("/api/tracking")
+    def tracking_status():
+        return jsonify(app.config["SIDEREAL_TRACKER"].status())
+
+    @app.post("/api/tracking/sidereal/start")
+    def start_sidereal_tracking():
+        try:
+            tracker = app.config["SIDEREAL_TRACKER"]
+            tracker.start()
+            return jsonify({"ok": True, "tracking": tracker.status()})
+        except (ConfigurationError, DeviceError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/tracking/stop")
+    def stop_tracking():
+        try:
+            tracker = app.config["SIDEREAL_TRACKER"]
+            tracker.stop()
+            return jsonify({"ok": True, "tracking": tracker.status()})
+        except (ConfigurationError, DeviceError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/astronomy/target")
+    def calculate_target():
+        data = request.get_json(silent=True) or {}
+        try:
+            target = EquatorialTarget(
+                name=str(data["name"]),
+                ra_deg=float(data["ra_deg"]),
+                dec_deg=float(data["dec_deg"]),
+            )
+            observer = ObserverLocation(
+                latitude_deg=float(data["latitude_deg"]),
+                longitude_deg=float(data["longitude_deg"]),
+                elevation_m=float(data.get("elevation_m", 0.0)),
+            )
+            solution = app.config["ASTRONOMY_SERVICE"].calculate_target(
+                target,
+                observer,
+                data["observation_time"],
+                mount_type=state.mount_type,
+            )
+            return jsonify({"ok": True, "target": solution.as_dict()})
+        except (ConfigurationError, KeyError, TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/tracking/rates")
+    def set_tracking_rates():
+        data = request.get_json(silent=True) or {}
+        try:
+            app.config["MOTION_CONTROLLER"].set_rate_pair(
+                float(data.get("ra_rate", 0.0)),
+                float(data.get("dec_rate", 0.0)),
+            )
+            return jsonify({"ok": True, "status": app.config["TELESCOPE_DEVICE"].status()})
+        except (ConfigurationError, DeviceError, TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
     @app.post("/api/motor/<motor_id>/move")
     def move(motor_id: str):
@@ -107,6 +179,7 @@ def create_app(config_path: str | Path | None = None, device=None) -> Flask:
     @app.post("/api/stop")
     def emergency_stop():
         app.config["TELESCOPE_DEVICE"].emergency_stop()
+        app.config["SIDEREAL_TRACKER"]._running = False
         return jsonify({"ok": True})
 
     return app

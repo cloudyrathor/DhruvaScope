@@ -1,5 +1,9 @@
 const motors = document.querySelector('#motors');
 const message = document.querySelector('#message');
+const targetResult = document.querySelector('#target-result');
+const targetTime = document.querySelector('#target-time');
+const liveClock = document.querySelector('#live-clock');
+let targetTimeEdited = false;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...options});
@@ -81,4 +85,52 @@ motors.addEventListener('input', (event) => {
   if (output) output.textContent = Number(input.value).toFixed(1);
 });
 document.querySelector('#emergency').addEventListener('click', async () => { try { await api('/api/stop', {method: 'POST'}); await refresh(); } catch (error) { message.textContent = error.message; } });
-document.querySelector('#refresh').addEventListener('click', refresh); refresh();
+document.querySelector('#refresh').addEventListener('click', refresh);
+
+function setDefaultTargetTime() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  targetTime.value = now.toISOString().slice(0, 16);
+}
+
+function formatLocalTime(date) {
+  return date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+}
+
+function formatUtcTime(date) {
+  return date.toISOString().slice(11, 19) + ' UTC';
+}
+
+function refreshClock() {
+  const now = new Date();
+  liveClock.textContent = `Local time: ${formatLocalTime(now)} · ${formatUtcTime(now)}`;
+  if (!targetTimeEdited && document.activeElement !== targetTime) setDefaultTargetTime();
+}
+
+document.querySelector('#calculate-target').addEventListener('click', async () => {
+  const timeInput = document.querySelector('#target-time').value;
+  if (!timeInput) { message.textContent = 'Choose an observation time.'; return; }
+  const payload = {
+    name: document.querySelector('#target-name').value,
+    ra_deg: Number(document.querySelector('#target-ra').value),
+    dec_deg: Number(document.querySelector('#target-dec').value),
+    latitude_deg: Number(document.querySelector('#observer-lat').value),
+    longitude_deg: Number(document.querySelector('#observer-lon').value),
+    elevation_m: Number(document.querySelector('#observer-elevation').value),
+    observation_time: new Date(timeInput).toISOString(),
+  };
+  try {
+    const response = await api('/api/astronomy/target', {method: 'POST', body: JSON.stringify(payload)});
+    const target = response.target;
+    targetResult.textContent = `${target.name} · ${target.above_horizon ? 'Above horizon' : 'Below horizon'}\n` +
+      `Apparent RA: ${target.apparent_ra_deg.toFixed(4)}° · DEC: ${target.apparent_dec_deg.toFixed(4)}°\n` +
+      `Altitude: ${target.altitude_deg.toFixed(2)}° · Azimuth: ${target.azimuth_deg.toFixed(2)}°`;
+    message.textContent = 'Target calculated successfully.';
+  } catch (error) { targetResult.textContent = 'Calculation failed.'; message.textContent = error.message; }
+});
+
+setDefaultTargetTime();
+targetTime.addEventListener('input', () => { targetTimeEdited = true; });
+refreshClock();
+setInterval(refreshClock, 1000);
+refresh();

@@ -17,6 +17,26 @@ def test_api_validates_commands_and_supports_stop():
     assert client.post("/api/stop").status_code == 200
 
 
+def test_astronomy_target_endpoint_validates_coordinate_workflow():
+    import pytest
+
+    pytest.importorskip("astropy")
+    client = create_app().test_client()
+    response = client.post(
+        "/api/astronomy/target",
+        json={
+            "name": "Test Star",
+            "ra_deg": 0.0,
+            "dec_deg": 0.0,
+            "latitude_deg": 0.0,
+            "longitude_deg": 0.0,
+            "observation_time": "2025-01-01T00:00:00Z",
+        },
+    )
+    assert response.status_code == 200
+    assert response.get_json()["target"]["name"] == "Test Star"
+
+
 def test_wifi_connection_uses_default_ap_address(monkeypatch):
     seen = {}
 
