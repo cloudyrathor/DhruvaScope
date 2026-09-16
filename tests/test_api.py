@@ -30,6 +30,73 @@ def test_mount_alignment_endpoint_stores_current_position():
     assert client.get("/api/mount/position").get_json()["source"] == "M31"
 
 
+def test_goto_plan_uses_alignment_without_moving_motors():
+    client = create_app().test_client()
+    client.post("/api/mount/align", json={"ra_deg": 350, "dec_deg": 20, "source": "manual"})
+    response = client.post("/api/goto/plan", json={"name": "Target", "ra_deg": 10, "dec_deg": 5})
+    assert response.status_code == 200
+    plan = response.get_json()["plan"]
+    assert plan["ra_delta_deg"] == 20
+    assert plan["dec_delta_deg"] == -15
+    assert plan["execution_supported"] is False
+    assert client.get("/api/status").get_json()["motors"]["RA"]["state"] == "IDLE"
+
+
+def test_telescope_calibration_records_references_and_estimates_scale():
+    client = create_app().test_client()
+    client.post("/api/calibration/mode", json={"enabled": True})
+    client.post("/api/calibration/reference", json={"name": "A", "ra_deg": 10, "dec_deg": 5})
+    client.post("/api/calibration/motion", json={"axis": "RA", "direction": "POS", "duration_ms": 1000})
+    client.post("/api/calibration/motion", json={"axis": "DEC", "direction": "POS", "duration_ms": 1000})
+    response = client.post("/api/calibration/reference", json={"name": "B", "ra_deg": 11, "dec_deg": 5.5})
+    assert response.status_code == 200
+    calibration = response.get_json()["calibration"]
+    assert calibration["scale_deg_per_second"] == {"RA": 1.0, "DEC": 0.5}
+
+
+def test_goto_plan_requires_alignment():
+    response = create_app().test_client().post(
+        "/api/goto/plan", json={"name": "Target", "ra_deg": 10, "dec_deg": 5}
+    )
+    assert response.status_code == 400
+
+
+def test_visual_tracker_saves_up_to_three_manual_references():
+    client = create_app().test_client()
+    assert client.post("/api/visual-tracker/reference", json={"name": "Moon", "ra_deg": 10, "dec_deg": 5}).status_code == 400
+    assert client.post("/api/visual-tracker/mode", json={"enabled": True}).status_code == 200
+    for index in range(4):
+        response = client.post(
+            "/api/visual-tracker/reference",
+            json={"name": f"Object {index}", "ra_deg": index + 1, "dec_deg": index},
+        )
+        assert response.status_code == 200
+    status = client.get("/api/visual-tracker").get_json()
+    assert len(status["references"]) == 3
+    assert status["references"][-1]["name"] == "Object 3"
+
+
+def test_visual_tracker_reference_reset_clears_alignment_and_target():
+    client = create_app().test_client()
+    client.post("/api/visual-tracker/mode", json={"enabled": True})
+    client.post("/api/visual-tracker/reference", json={"name": "Moon", "ra_deg": 10, "dec_deg": 5})
+    response = client.post("/api/visual-tracker/references/reset")
+    assert response.status_code == 200
+    assert response.get_json()["visual_tracker"]["references"] == []
+    assert response.get_json()["alignment"]["aligned"] is False
+
+
+def test_visual_tracker_prepares_next_target_without_moving_motors():
+    client = create_app().test_client()
+    client.post("/api/visual-tracker/mode", json={"enabled": True})
+    client.post("/api/visual-tracker/reference", json={"name": "Moon", "ra_deg": 350, "dec_deg": 20})
+    response = client.post("/api/visual-tracker/target", json={"name": "M31", "ra_deg": 10, "dec_deg": 5})
+    assert response.status_code == 200
+    assert response.get_json()["target"]["ra_delta_deg"] == 20
+    assert response.get_json()["target"]["execution_supported"] is False
+    assert client.get("/api/status").get_json()["motors"]["RA"]["state"] == "IDLE"
+
+
 def test_catalog_endpoint_rejects_visible_query_without_observer_data():
     client = create_app().test_client()
     response = client.get("/api/catalog/objects?visible=true")

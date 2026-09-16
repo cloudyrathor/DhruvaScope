@@ -56,9 +56,31 @@ after position refresh and rate-conversion behavior are validated.
 The catalog endpoint is local and offline-first. External providers can later
 extend it without changing the UI selection contract.
 
+## M9 GoTo boundary
+
+`GoToPlanner` consumes the open-loop M6.6 alignment reference and produces a
+shortest-path RA delta plus a DEC delta. The M9 planning endpoint does not
+command `TelescopeDevice`; motor execution remains a later safety-gated slice.
+
 ## M6.6 alignment boundary
 
 Mount alignment is stored in host `TelescopeState` as an open-loop RA/DEC
 reference. It is deliberately independent of firmware feedback and does not
 claim that the motor position is measured. GoTo may use this reference later;
 M6.6 itself only records the manually established coordinate.
+
+## M10 Visual Tracker boundary
+
+Visual Tracker mode is currently a manual, camera-optional calibration surface.
+The browser sends bounded RA/DEC jog commands while an arrow is held and sends
+a stop on release. Confirmed objects are stored as alignment references; no
+camera, encoder, position sensor, computer-vision detection, or autonomous
+correction is required or performed yet.
+
+## M11 calibration boundary
+
+Calibration mode logs browser-side manual nudge durations and associates them
+with manually confirmed catalog coordinates. It estimates independent RA/DEC
+scale values without requiring encoders. These values are advisory until
+validated and persisted as a mount configuration; calibration does not alter
+normal one-reference positioning automatically.

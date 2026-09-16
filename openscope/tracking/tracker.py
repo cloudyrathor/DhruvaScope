@@ -37,6 +37,8 @@ class SiderealTracker:
     def start(self) -> None:
         """Start sidereal tracking on RA through the device abstraction."""
         assert self.motion is not None
+        if not self.device.state.motor("RA").enabled:
+            raise ConfigurationError("RA motor is disabled")
         self.motion.set_tracking_rate("RA", self.ra_direction, self.rate_deg_per_second)
         self._running = True
 

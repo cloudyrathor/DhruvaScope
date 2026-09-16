@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DhruvaScope Control Panel</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='control_panel.css', v='catalog-ui-2') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='control_panel.css', v='ui-8') }}">
 </head>
 <body>
   <main>
@@ -12,6 +12,7 @@
       <div>
         <p class="eyebrow">DHRUVASCOPE / EQUATORIAL MOUNT</p>
         <h1>Control Panel</h1>
+        <p class="hero-subtitle">Observe, calibrate, and guide your telescope with confidence.</p>
       </div>
       <div class="header-status">
         <span id="connection" class="status">Connecting…</span>
@@ -19,7 +20,18 @@
       </div>
     </header>
 
-    <section class="card connection-card">
+    <nav class="app-nav" aria-label="Workspace sections">
+      <button class="nav-item active" data-section="connection" aria-controls="section-connection" aria-selected="true"><span>01</span> Connect</button>
+      <button class="nav-item" data-section="mount" aria-controls="section-mount" aria-selected="false"><span>02</span> Mount</button>
+      <button class="nav-item" data-section="target" aria-controls="section-target" aria-selected="false"><span>03</span> Target</button>
+      <button class="nav-item" data-section="alignment" aria-controls="section-alignment" aria-selected="false"><span>04</span> Align</button>
+      <button class="nav-item" data-section="goto" aria-controls="section-goto" aria-selected="false"><span>05</span> GoTo</button>
+      <button class="nav-item" data-section="moon" aria-controls="section-moon" aria-selected="false"><span>06</span> Moon</button>
+      <button class="nav-item" data-section="camera" aria-controls="section-camera" aria-selected="false"><span>07</span> Camera</button>
+      <button class="nav-item" data-section="visual" aria-controls="section-visual" aria-selected="false"><span>08</span> Visual Tracker</button>
+    </nav>
+
+    <section id="section-connection" class="card workspace-section connection-card active-section">
       <h2>Connection</h2>
       <div class="connection-grid">
         <label>Controller<select id="controller"><option>ESP32</option></select></label>
@@ -31,13 +43,13 @@
       <p class="hint">For the firmware’s default AP, connect this computer to <code>DhruvaScope-ESP32-Test</code>, then use <code>192.168.4.1</code> and TCP port 9999. In router mode, enter the IP printed by the ESP32 Serial Monitor.</p>
     </section>
 
-    <section class="card">
+    <section id="section-mount" class="card workspace-section">
       <div class="section-heading"><h2>Mount Status</h2><span id="mount-type">—</span></div>
       <div id="motors" class="motor-grid"></div>
       <button id="emergency" class="danger">Emergency stop all motors</button>
     </section>
 
-    <section class="card">
+    <section id="section-target" class="card workspace-section">
       <div class="section-heading"><h2>Target calculation</h2><span>M6.5</span></div>
       <div class="target-grid">
         <label>Catalog object<select id="catalog-object"><option value="">Loading catalog…</option></select></label>
@@ -55,22 +67,96 @@
       <p class="hint">This calculates coordinates only. It does not start motors or require feedback sensors.</p>
     </section>
 
-    <section class="card">
+    <section id="section-alignment" class="card workspace-section">
       <div class="section-heading"><h2>Mount alignment</h2><span>M6.6</span></div>
       <div class="alignment-status" id="alignment-status">Mount position is not aligned.</div>
       <button id="align-selected">Set current position to selected object</button>
       <p class="hint">First point the telescope manually at the selected object. This stores an open-loop RA/DEC reference; no feedback sensor is required.</p>
     </section>
 
-    <section class="card">
+    <section id="section-goto" class="card workspace-section">
+      <div class="section-heading"><h2>GoTo plan</h2><span>M9 preview</span></div>
+      <button id="plan-goto">Plan move to selected object</button>
+      <div id="goto-result" class="target-result" aria-live="polite">No GoTo plan calculated.</div>
+      <p class="hint">Planning only: this calculates the shortest RA move and DEC offset but does not start motors.</p>
+    </section>
+
+    <section id="section-moon" class="card workspace-section">
       <div class="section-heading"><h2>Moon position</h2><span>M7 preview</span></div>
       <button id="calculate-moon">Calculate current Moon position</button>
       <div id="moon-result" class="target-result" aria-live="polite">No Moon position calculated.</div>
       <p class="hint">This is a calculation preview only. Moon tracking will not start motors yet.</p>
     </section>
 
+    <section id="section-camera" class="card workspace-section">
+      <div class="section-heading"><h2>Camera</h2><span>M8</span></div>
+      <div class="camera-controls">
+        <button id="camera-open">Open mock camera</button>
+        <button id="camera-capture">Capture image</button>
+        <button id="camera-close">Close camera</button>
+      </div>
+      <img id="camera-preview" class="camera-preview" alt="Live camera preview" hidden>
+      <p id="camera-status" class="hint">Camera is closed.</p>
+    </section>
+
+    <section id="section-visual" class="card workspace-section visual-tracker-card">
+      <div class="tracker-hero">
+        <div>
+          <p class="tracker-kicker">PRECISION ASSIST</p>
+          <div class="section-heading"><h2>Visual Tracker</h2><span>M10 / M11</span></div>
+          <p class="hint">Manually center known objects, save references, and prepare the next target. Camera assistance is optional.</p>
+        </div>
+        <label class="tracker-mode tracker-switch"><input id="visual-tracker-enabled" type="checkbox"><span>Tracker mode <strong>OFF</strong></span></label>
+      </div>
+      <div class="tracker-steps" aria-label="Visual tracker workflow">
+        <div class="tracker-step active" data-tracker-step="reference"><span>1</span><div><strong>Reference</strong><small>Center a known object</small></div></div>
+        <div class="tracker-step" data-tracker-step="calibration"><span>2</span><div><strong>Calibrate</strong><small>Add more points if needed</small></div></div>
+        <div class="tracker-step" data-tracker-step="target"><span>3</span><div><strong>Prepare</strong><small>Choose your next target</small></div></div>
+      </div>
+      <div class="visual-tracker-grid">
+        <div class="tracker-stack">
+          <div class="tracker-panel">
+            <div class="panel-title"><span class="panel-icon">◎</span><div><strong>Reference point</strong><small>Tell the mount where it is pointing</small></div></div>
+            <label>Known object<select id="visual-reference-object"><option value="">Select an object</option></select></label>
+            <button id="save-visual-reference" class="primary-action" disabled>Confirm current position</button>
+            <button id="reset-visual-references" class="secondary-action" type="button">Reset reference points</button>
+            <div id="visual-reference-status" class="hint visual-reference-status" aria-live="polite">No visual references saved.</div>
+          </div>
+          <div class="tracker-panel">
+            <div class="panel-title"><span class="panel-icon">✦</span><div><strong>Next target</strong><small>Calculate the move from the current reference</small></div></div>
+            <label>Target object<select id="visual-target-object"><option value="">Select an object</option></select></label>
+            <button id="prepare-visual-target" class="primary-action" disabled>Prepare target</button>
+            <div id="visual-target-result" class="target-result" aria-live="polite">No target prepared.</div>
+          </div>
+          <div class="tracker-panel calibration-panel">
+            <div class="panel-title"><span class="panel-icon">⌁</span><div><strong>Telescope calibration</strong><small>Use multiple references to estimate movement scale</small></div></div>
+            <label class="tracker-mode"><input id="calibration-enabled" type="checkbox"><span>Enable calibration mode</span></label>
+            <button id="reset-calibration" disabled>Reset calibration points</button>
+            <p id="calibration-status" class="hint">Calibration is off. One reference is enough for basic positioning.</p>
+          </div>
+        </div>
+        <div class="tracker-control-panel">
+          <div class="panel-title"><span class="panel-icon">✥</span><div><strong>Manual positioning</strong><small>Hold an arrow to move · release to stop</small></div></div>
+          <div class="nudge-pad" aria-label="Visual tracker manual movement controls">
+            <button class="nudge nudge-up" data-axis="DEC" data-direction="POS" aria-label="Move telescope up">▲</button>
+            <button class="nudge nudge-left" data-axis="RA" data-direction="NEG" aria-label="Move telescope left">◀</button>
+            <button class="nudge nudge-stop" data-action="stop" aria-label="Stop manual movement">■</button>
+            <button class="nudge nudge-right" data-axis="RA" data-direction="POS" aria-label="Move telescope right">▶</button>
+            <button class="nudge nudge-down" data-axis="DEC" data-direction="NEG" aria-label="Move telescope down">▼</button>
+          </div>
+          <div class="axis-legend"><span>DEC</span><span>RA</span></div>
+          <button id="tracker-emergency-stop" class="danger tracker-stop" type="button">Emergency stop</button>
+        </div>
+      </div>
+      <details class="tracker-guide">
+        <summary>How to use Visual Tracker</summary>
+        <span>Enable Tracker mode, center a known object through the eyepiece or optional camera, select it, and confirm its current position. Add 2–3 points in calibration mode when estimating movement scale. Prepare calculates the next target offset only; it does not move the telescope automatically.</span>
+      </details>
+      <p class="hint tracker-safety">Camera and encoders are optional. Releasing an arrow stops that axis; Emergency stop halts both axes.</p>
+    </section>
+
     <p id="message" class="message"></p>
   </main>
-  <script src="{{ url_for('static', filename='control_panel.js', v='catalog-ui-2') }}"></script>
+  <script src="{{ url_for('static', filename='control_panel.js', v='ui-8') }}"></script>
 </body>
 </html>

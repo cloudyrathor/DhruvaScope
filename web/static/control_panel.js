@@ -8,8 +8,42 @@ const targetTime = document.querySelector('#target-time');
 const liveClock = document.querySelector('#live-clock');
 const alignmentStatus = document.querySelector('#alignment-status');
 const alignSelectedButton = document.querySelector('#align-selected');
+const gotoResult = document.querySelector('#goto-result');
+const cameraPreview = document.querySelector('#camera-preview');
+const cameraStatus = document.querySelector('#camera-status');
+const visualTrackerEnabled = document.querySelector('#visual-tracker-enabled');
+const visualReferenceObject = document.querySelector('#visual-reference-object');
+const saveVisualReference = document.querySelector('#save-visual-reference');
+const resetVisualReferences = document.querySelector('#reset-visual-references');
+const visualReferenceStatus = document.querySelector('#visual-reference-status');
+const visualTargetObject = document.querySelector('#visual-target-object');
+const prepareVisualTarget = document.querySelector('#prepare-visual-target');
+const visualTargetResult = document.querySelector('#visual-target-result');
+const calibrationEnabled = document.querySelector('#calibration-enabled');
+const resetCalibration = document.querySelector('#reset-calibration');
+const calibrationStatus = document.querySelector('#calibration-status');
+const trackerEmergencyStop = document.querySelector('#tracker-emergency-stop');
 let targetTimeEdited = false;
 let catalogObjects = [];
+let visualTrackerState = {references: [], target: null};
+let calibrationState = {enabled: false, points: []};
+const visualNudgeSpeed = 0.03;
+const nudgeStartedAt = {};
+
+function showSection(sectionName) {
+  document.querySelectorAll('.nav-item').forEach((item) => {
+    const active = item.dataset.section === sectionName;
+    item.classList.toggle('active', active);
+    item.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('.workspace-section').forEach((section) => {
+    section.classList.toggle('active-section', section.id === `section-${sectionName}`);
+  });
+}
+
+document.querySelectorAll('.nav-item').forEach((item) => {
+  item.addEventListener('click', () => showSection(item.dataset.section));
+});
 
 async function api(path, options = {}) {
   const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...options});
@@ -85,6 +119,84 @@ function renderCatalog(objects) {
   }
 }
 
+function renderVisualReferenceObjects(objects) {
+  visualReferenceObject.replaceChildren();
+  visualTargetObject.replaceChildren();
+  for (const object of objects) {
+    for (const select of [visualReferenceObject, visualTargetObject]) {
+      const option = document.createElement('option');
+      option.value = object.id;
+      option.textContent = `${object.id} — ${object.name}`;
+      select.appendChild(option);
+    }
+  }
+  saveVisualReference.disabled = !visualTrackerEnabled.checked || objects.length === 0;
+  prepareVisualTarget.disabled = !visualTrackerEnabled.checked || objects.length === 0;
+}
+
+function renderVisualTracker(status) {
+  visualTrackerState = status;
+  visualTrackerEnabled.checked = status.enabled;
+  const modeLabel = visualTrackerEnabled.closest('.tracker-switch')?.querySelector('strong');
+  if (modeLabel) modeLabel.textContent = status.enabled ? 'ON' : 'OFF';
+  saveVisualReference.disabled = !status.enabled || catalogObjects.length === 0;
+  prepareVisualTarget.disabled = !status.enabled || catalogObjects.length === 0;
+  renderVisualReferences(status.references);
+  if (status.target && typeof status.target === 'object') {
+    visualTargetResult.textContent = `${status.target.name}\nRA delta: ${Number(status.target.ra_delta_deg).toFixed(4)}° · DEC delta: ${Number(status.target.dec_delta_deg).toFixed(4)}°\nReady for the next confirmed movement.`;
+  }
+  renderTrackerSteps();
+}
+
+function renderVisualReferences(references) {
+  visualReferenceStatus.replaceChildren();
+  if (!references.length) {
+    visualReferenceStatus.textContent = 'No visual references saved.';
+    return;
+  }
+  const count = document.createElement('span');
+  count.className = 'reference-count';
+  count.textContent = `${references.length}/3 references saved`;
+  visualReferenceStatus.appendChild(count);
+  for (const reference of references) {
+    const badge = document.createElement('span');
+    badge.className = 'reference-badge';
+    const check = document.createElement('span');
+    check.className = 'reference-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.textContent = '✓';
+    const name = document.createElement('span');
+    name.textContent = reference.name;
+    badge.append(check, name);
+    visualReferenceStatus.appendChild(badge);
+  }
+}
+
+function renderCalibration(status) {
+  calibrationState = status;
+  calibrationEnabled.checked = status.enabled;
+  resetCalibration.disabled = !status.enabled;
+  const scales = status.scale_deg_per_second || {};
+  const raScale = scales.RA == null ? 'pending' : Number(scales.RA).toFixed(5) + '°/s';
+  const decScale = scales.DEC == null ? 'pending' : Number(scales.DEC).toFixed(5) + '°/s';
+  calibrationStatus.textContent = status.enabled
+    ? status.points.length + ' reference point(s). RA scale: ' + raScale + ' · DEC scale: ' + decScale
+    : 'Calibration is off. One reference is enough for basic positioning.';
+  renderTrackerSteps();
+}
+
+function renderTrackerSteps() {
+  const references = visualTrackerState.references?.length || 0;
+  const hasTarget = Boolean(visualTrackerState.target && typeof visualTrackerState.target === 'object');
+  const activeStep = !references ? 'reference' : calibrationState.enabled && calibrationState.points.length < 3 ? 'calibration' : hasTarget ? 'target' : 'target';
+  document.querySelectorAll('[data-tracker-step]').forEach((step) => {
+    const name = step.dataset.trackerStep;
+    const complete = (name === 'reference' && references > 0) || (name === 'calibration' && calibrationState.points.length >= 3) || (name === 'target' && hasTarget);
+    step.classList.toggle('complete', complete);
+    step.classList.toggle('active', name === activeStep && !complete);
+  });
+}
+
 async function loadCatalog() {
   try {
     const params = new URLSearchParams();
@@ -95,6 +207,7 @@ async function loadCatalog() {
     params.set('observation_time', new Date(document.querySelector('#target-time').value).toISOString());
     const response = await api(`/api/catalog/objects?${params.toString()}`);
     renderCatalog(response.objects || []);
+    renderVisualReferenceObjects(response.objects || []);
   } catch (error) {
     catalogObjects = [];
     catalogSelect.replaceChildren();
@@ -106,6 +219,113 @@ async function loadCatalog() {
     message.textContent = error.message;
   }
 }
+
+visualTrackerEnabled.addEventListener('change', async () => {
+  try {
+    const response = await api('/api/visual-tracker/mode', {
+      method: 'POST', body: JSON.stringify({enabled: visualTrackerEnabled.checked}),
+    });
+    if (response.visual_tracker) renderVisualTracker(response.visual_tracker);
+    message.textContent = visualTrackerEnabled.checked
+      ? 'Visual Tracker enabled. Use the telescope view or optional camera preview with the arrow pad.'
+      : 'Visual Tracker disabled; RA and DEC manual movement stopped.';
+  } catch (error) {
+    visualTrackerEnabled.checked = !visualTrackerEnabled.checked;
+    message.textContent = error.message;
+  }
+});
+
+saveVisualReference.addEventListener('click', async () => {
+  const selected = catalogObjects.find((object) => object.id === visualReferenceObject.value);
+  if (!selected) { message.textContent = 'Select a reference object first.'; return; }
+  try {
+    const response = await api(calibrationEnabled.checked ? '/api/calibration/reference' : '/api/visual-tracker/reference', {
+      method: 'POST',
+      body: JSON.stringify({name: `${selected.id} — ${selected.name}`, ra_deg: selected.ra_deg, dec_deg: selected.dec_deg}),
+    });
+    if (response.visual_tracker) renderVisualTracker(response.visual_tracker);
+    if (response.calibration) renderCalibration(response.calibration);
+    renderAlignment({aligned: true, ra_deg: selected.ra_deg, dec_deg: selected.dec_deg, source: selected.name});
+    message.textContent = `${selected.name} saved as a visual reference.`;
+  } catch (error) { message.textContent = error.message; }
+});
+
+resetVisualReferences.addEventListener('click', async () => {
+  try {
+    const response = await api('/api/visual-tracker/references/reset', {method: 'POST'});
+    renderVisualTracker(response.visual_tracker);
+    renderAlignment(response.alignment);
+    visualTargetResult.textContent = 'No target prepared.';
+    message.textContent = 'Visual reference points and mount alignment were reset.';
+  } catch (error) { message.textContent = error.message; }
+});
+
+calibrationEnabled.addEventListener('change', async () => {
+  try {
+    const response = await api('/api/calibration/mode', {method: 'POST', body: JSON.stringify({enabled: calibrationEnabled.checked})});
+    renderCalibration(response.calibration);
+    message.textContent = calibrationEnabled.checked ? 'Calibration enabled. Record the first reference, move, then record the next.' : 'Calibration disabled.';
+  } catch (error) { calibrationEnabled.checked = !calibrationEnabled.checked; message.textContent = error.message; }
+});
+
+resetCalibration.addEventListener('click', async () => {
+  try {
+    const response = await api('/api/calibration/reset', {method: 'POST'});
+    renderCalibration(response.calibration);
+    message.textContent = 'Calibration references reset.';
+  } catch (error) { message.textContent = error.message; }
+});
+
+prepareVisualTarget.addEventListener('click', async () => {
+  const selected = catalogObjects.find((object) => object.id === visualTargetObject.value);
+  if (!selected) { message.textContent = 'Select a target object first.'; return; }
+  try {
+    const response = await api('/api/visual-tracker/target', {
+      method: 'POST',
+      body: JSON.stringify({name: `${selected.id} — ${selected.name}`, ra_deg: selected.ra_deg, dec_deg: selected.dec_deg}),
+    });
+    const target = response.target;
+    visualTargetResult.textContent = `${target.name}\nRA delta: ${target.ra_delta_deg.toFixed(4)}° · DEC delta: ${target.dec_delta_deg.toFixed(4)}°\nReady for the next confirmed movement.`;
+    message.textContent = `${selected.name} prepared. No motors were moved.`;
+  } catch (error) { visualTargetResult.textContent = 'Target preparation failed.'; message.textContent = error.message; }
+});
+
+async function nudgeStart(button) {
+  if (!visualTrackerEnabled.checked) { message.textContent = 'Enable Visual Tracker mode first.'; return; }
+  try {
+    nudgeStartedAt[button.dataset.axis] = performance.now();
+    await api(`/api/motor/${button.dataset.axis}/move`, {
+      method: 'POST', body: JSON.stringify({direction: button.dataset.direction, speed: visualNudgeSpeed}),
+    });
+  } catch (error) { message.textContent = error.message; }
+}
+
+async function nudgeStop(axis) {
+  try {
+    await api(`/api/motor/${axis}/stop`, {method: 'POST'});
+    if (calibrationEnabled.checked && nudgeStartedAt[axis] != null) {
+      const button = document.querySelector('.nudge[data-axis="' + axis + '"]');
+      await api('/api/calibration/motion', {method: 'POST', body: JSON.stringify({
+        axis, direction: button.dataset.direction,
+        duration_ms: Math.min(300000, Math.max(0, performance.now() - nudgeStartedAt[axis])),
+      })});
+      delete nudgeStartedAt[axis];
+    }
+  } catch (error) { message.textContent = error.message; }
+}
+
+document.querySelectorAll('.nudge').forEach((button) => {
+  if (button.dataset.action === 'stop') {
+    button.addEventListener('click', () => { nudgeStop('RA'); nudgeStop('DEC'); });
+    return;
+  }
+  button.addEventListener('pointerdown', (event) => { event.preventDefault(); button.setPointerCapture(event.pointerId); nudgeStart(button); });
+  button.addEventListener('pointerup', () => nudgeStop(button.dataset.axis));
+  button.addEventListener('pointercancel', () => nudgeStop(button.dataset.axis));
+  button.addEventListener('pointerleave', () => nudgeStop(button.dataset.axis));
+});
+
+trackerEmergencyStop.addEventListener('click', () => { nudgeStop('RA'); nudgeStop('DEC'); });
 
 catalogSelect.addEventListener('change', () => {
   const selected = catalogObjects.find((object) => object.id === catalogSelect.value);
@@ -128,6 +348,22 @@ alignSelectedButton.addEventListener('click', async () => {
     renderAlignment(response.alignment);
     message.textContent = `Mount aligned to ${name}.`;
   } catch (error) { message.textContent = error.message; }
+});
+
+document.querySelector('#plan-goto').addEventListener('click', async () => {
+  try {
+    const response = await api('/api/goto/plan', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: document.querySelector('#target-name').value,
+        ra_deg: Number(document.querySelector('#target-ra').value),
+        dec_deg: Number(document.querySelector('#target-dec').value),
+      }),
+    });
+    const plan = response.plan;
+    gotoResult.textContent = `${plan.name}\nRA delta: ${plan.ra_delta_deg.toFixed(4)}° · DEC delta: ${plan.dec_delta_deg.toFixed(4)}°\nExecution is not enabled yet.`;
+    message.textContent = 'GoTo plan calculated; motors were not moved.';
+  } catch (error) { gotoResult.textContent = 'GoTo planning failed.'; message.textContent = error.message; }
 });
 
 visibleOnly.addEventListener('change', loadCatalog);
@@ -181,6 +417,26 @@ motors.addEventListener('input', (event) => {
 });
 document.querySelector('#emergency').addEventListener('click', async () => { try { await api('/api/stop', {method: 'POST'}); await refresh(); } catch (error) { message.textContent = error.message; } });
 document.querySelector('#refresh').addEventListener('click', refresh);
+
+async function refreshCamera() {
+  const camera = await api('/api/camera');
+  cameraStatus.textContent = camera.open ? `Camera open · ${camera.type}` : 'Camera is closed.';
+  cameraPreview.hidden = !camera.open;
+  cameraPreview.src = camera.open ? '/api/camera/stream' : '';
+}
+
+document.querySelector('#camera-open').addEventListener('click', async () => {
+  try { await api('/api/camera/open', {method: 'POST', body: JSON.stringify({type: 'mock'})}); await refreshCamera(); }
+  catch (error) { message.textContent = error.message; }
+});
+document.querySelector('#camera-capture').addEventListener('click', async () => {
+  try { await api('/api/camera/capture', {method: 'POST', body: JSON.stringify({filename: `capture-${Date.now()}.jpg`})}); message.textContent = 'Image captured with metadata.'; }
+  catch (error) { message.textContent = error.message; }
+});
+document.querySelector('#camera-close').addEventListener('click', async () => {
+  try { await api('/api/camera/close', {method: 'POST'}); await refreshCamera(); }
+  catch (error) { message.textContent = error.message; }
+});
 
 function setDefaultTargetTime() {
   const now = new Date();
@@ -249,3 +505,6 @@ refreshClock();
 setInterval(refreshClock, 1000);
 refresh();
 loadCatalog();
+refreshCamera();
+api('/api/visual-tracker').then(renderVisualTracker).catch((error) => { message.textContent = error.message; });
+api('/api/calibration').then(renderCalibration).catch((error) => { message.textContent = error.message; });

@@ -83,3 +83,40 @@ time from the M6.5 panel. This slice does not start motors or implement
 periodic Moon rate updates yet.
 
 Do not skip milestones.
+
+## Milestone 8 — Camera / OpenCV
+
+The first M8 slice adds a hardware-independent `Camera` interface, a
+`MockCamera`, and an `OpenCVCamera` adapter. The Flask API supports camera
+open/close/status, JPEG capture with JSON metadata sidecars, and an MJPEG
+preview stream. The control panel exposes the mock-camera workflow so it can
+be tested without physical hardware. Camera code remains separate from motor
+and astronomy services.
+
+## Milestone 9 — GoTo planning
+
+The first M9 slice adds `POST /api/goto/plan`. It uses the M6.6 manually stored
+RA/DEC reference to calculate the shortest signed RA delta and DEC delta for a
+selected target. Planning is hardware-safe and does not move motors; GoTo
+execution requires a later slice with mount limits, speed profiles, and an
+explicit execution command.
+
+## Milestone 10 — Visual Tracker manual calibration
+
+The first M10 slice adds a UI Visual Tracker mode with optional live camera
+assistance, four-direction manual nudge controls, release-to-stop behavior,
+and up to three manually confirmed reference objects. The operator may use an
+eyepiece alone; confirming a reference stores the selected object's coordinates
+as the current open-loop alignment. Automatic image recognition and closed-loop
+correction remain future M12/M13 work.
+
+Visual Tracker also provides a separate next-target selector and a safe
+prepare action that calculates the target RA/DEC offsets without moving motors.
+
+## Milestone 11 — Telescope calibration
+
+Calibration mode is separate from one-reference positioning. It records up to
+six known reference objects and the signed duration of RA/DEC manual nudges
+between them, then estimates degrees-per-second scale values for each axis.
+The estimate is a starting calibration and must be validated on the physical
+mount; backlash, polar alignment, and timing latency can affect accuracy.

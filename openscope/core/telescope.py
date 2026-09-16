@@ -37,6 +37,14 @@ class MountAlignment:
         self.source = source
         self.updated_at_utc = datetime.now(timezone.utc).isoformat()
 
+    def clear(self) -> None:
+        """Remove the open-loop reference when calibration is reset."""
+        self.aligned = False
+        self.ra_deg = None
+        self.dec_deg = None
+        self.source = None
+        self.updated_at_utc = None
+
     def as_dict(self) -> dict[str, object]:
         return {
             "aligned": self.aligned,
