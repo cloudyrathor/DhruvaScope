@@ -31,7 +31,9 @@
 #define DEC_STEPS_PER_DEGREE 5866.6667
 #define ENABLE_ACTIVE_LEVEL LOW
 #define MAX_SPEED_DEG_PER_SECOND 0.1  // Conservative first-test limit; tune after acceleration is added.
+#define FOCUS_MAX_STEPS_PER_SECOND 200.0  // FOCUS speed is in steps/s (stepsPerDegree = 1). Start low; raise if the motor does not stall.
 #define STEP_PULSE_US 10
+#define MAX_STEP_COMMAND 5000
 #define WIFI_PORT 9999
 
 // AP mode: the ESP32 creates this network.
@@ -42,7 +44,7 @@ IPAddress AP_GATEWAY(192, 168, 4, 1);
 IPAddress AP_SUBNET(255, 255, 255, 0);
 // STA mode: the ESP32 joins this existing router network.
 const char *ROUTER_SSID = "AP-2GHz";
-const char *ROUTER_PASSWORD = "************";
+const char *ROUTER_PASSWORD = "***********";
 const char *BLUETOOTH_NAME = "DhruvaScope-ESP32";
 
 #if ENABLE_BLUETOOTH
@@ -51,15 +53,16 @@ BluetoothSerial bluetooth;
 WiFiServer wifiServer(WIFI_PORT);
 WiFiClient wifiClient;
 
-struct Channel { const char *id; uint8_t stepPin, dirPin; float stepsPerDegree, speed; bool enabled, moving, positive; unsigned long lastStep; };
+// maxSpeed is the per-channel speed limit (deg/s for RA/DEC, steps/s for FOCUS).
+struct Channel { const char *id; uint8_t stepPin, dirPin; float stepsPerDegree, speed; bool enabled, moving, positive; unsigned long lastStep; float maxSpeed; long stepsRemaining; };  // stepsRemaining > 0: finite STEP move
 Channel channels[] = {
-  {"RA", RA_STEP_PIN, RA_DIR_PIN, RA_STEPS_PER_DEGREE, 0, true, false, true, 0},
-  {"DEC", DEC_STEP_PIN, DEC_DIR_PIN, DEC_STEPS_PER_DEGREE, 0, true, false, true, 0}
+  {"RA", RA_STEP_PIN, RA_DIR_PIN, RA_STEPS_PER_DEGREE, 0, true, false, true, 0, MAX_SPEED_DEG_PER_SECOND},
+  {"DEC", DEC_STEP_PIN, DEC_DIR_PIN, DEC_STEPS_PER_DEGREE, 0, true, false, true, 0, MAX_SPEED_DEG_PER_SECOND}
   #if ENABLE_OPTIONAL_MOTORS
   ,
-  {"FOCUS", FOCUS_STEP_PIN, FOCUS_DIR_PIN, 1, 0, true, false, true, 0},
-  {"AUX1", AUX1_STEP_PIN, AUX1_DIR_PIN, 1, 0, false, false, true, 0},
-  {"AUX2", 255, 255, 1, 0, false, false, true, 0}
+  {"FOCUS", FOCUS_STEP_PIN, FOCUS_DIR_PIN, 1, 0, true, false, true, 0, FOCUS_MAX_STEPS_PER_SECOND},
+  {"AUX1", AUX1_STEP_PIN, AUX1_DIR_PIN, 1, 0, false, false, true, 0, MAX_SPEED_DEG_PER_SECOND},
+  {"AUX2", 255, 255, 1, 0, false, false, true, 0, MAX_SPEED_DEG_PER_SECOND}
   #endif
 };
 
@@ -79,7 +82,7 @@ void reply(Stream &out, int id, const String &status, const String &data = "{}",
 
 Channel *findChannel(const String &id) { for (auto &channel : channels) if (id == channel.id) return &channel; return nullptr; }
 void setDriverEnabled(bool enabled) { digitalWrite(ENABLE_PIN, enabled ? ENABLE_ACTIVE_LEVEL : !ENABLE_ACTIVE_LEVEL); }
-void stopChannel(Channel *channel) { if (channel) { channel->moving = false; channel->speed = 0; } }
+void stopChannel(Channel *channel) { if (channel) { channel->moving = false; channel->speed = 0; channel->stepsRemaining = 0; } }
 void stopAll() { for (auto &channel : channels) stopChannel(&channel); setDriverEnabled(false); }
 
 String statusJson() {
@@ -105,15 +108,28 @@ void command(Stream &out, const String &line) {
   Channel *channel = findChannel(motorId); if (!channel) { reply(out, id, "ERROR", "{}", "UNKNOWN_MOTOR"); return; }
   if (channel->stepPin == 255) { reply(out, id, "ERROR", "{}", "MOTOR_NOT_WIRED"); return; }
   if (cmd == "ENABLE" || cmd == "DISABLE") { channel->enabled = cmd == "ENABLE"; stopChannel(channel); if (cmd == "DISABLE") setDriverEnabled(false); reply(out, id, "OK"); return; }
+  if (cmd == "STEP") {
+    // Finite precise move: {"cmd":"STEP","motor":"FOCUS","direction":"POS","steps":10,"speed":100}
+    long steps = field(line, "steps").toInt(); float speed = field(line, "speed").toFloat();
+    if (!channel->enabled || steps <= 0 || steps > MAX_STEP_COMMAND || speed <= 0 || speed > channel->maxSpeed) { reply(out, id, "ERROR", "{}", "INVALID_STEPS_SPEED_OR_DISABLED"); return; }
+    setDriverEnabled(true);
+    channel->positive = field(line, "direction") == "POS";
+    digitalWrite(channel->dirPin, channel->positive ? HIGH : LOW); delayMicroseconds(20);
+    channel->speed = speed; channel->stepsRemaining = steps; channel->lastStep = micros(); channel->moving = true;
+    Serial.print("STEP "); Serial.print(channel->id); Serial.print(channel->positive ? " POS " : " NEG ");
+    Serial.print(steps); Serial.print(" steps @ "); Serial.println(speed, 3);
+    reply(out, id, "OK"); return;
+  }
   if (cmd == "SET_RATE" || cmd == "SET_SPEED" || cmd == "MOVE") {
     float speed = cmd == "SET_RATE" ? field(line, "rate").toFloat() : field(line, "speed").toFloat();
-    if (!channel->enabled || speed <= 0 || speed > MAX_SPEED_DEG_PER_SECOND) { reply(out, id, "ERROR", "{}", "INVALID_SPEED_OR_DISABLED"); return; }
+    if (!channel->enabled || speed <= 0 || speed > channel->maxSpeed) { reply(out, id, "ERROR", "{}", "INVALID_SPEED_OR_DISABLED"); return; }
     channel->speed = speed;
     if (cmd == "MOVE") {
       setDriverEnabled(true);
       channel->positive = field(line, "direction") == "POS";
-      digitalWrite(channel->dirPin, channel->positive ? HIGH : LOW);
+      digitalWrite(channel->dirPin, channel->positive ? HIGH : LOW); delayMicroseconds(20);
       channel->lastStep = micros();
+      channel->stepsRemaining = 0;
       channel->moving = true;
       Serial.print("MOVE "); Serial.print(channel->id);
       Serial.print(channel->positive ? " POS " : " NEG "); Serial.print(speed, 3);
@@ -195,10 +211,14 @@ void loop() {
   #endif
   unsigned long now = micros(); for (auto &channel : channels) if (channel.moving && channel.speed > 0 && channel.stepPin != 255) {
     unsigned long interval = (unsigned long)(1000000.0 / (channel.speed * channel.stepsPerDegree));
-    if (interval < 2) interval = 2;
+    if (interval < STEP_PULSE_US + 10) interval = STEP_PULSE_US + 10;
     if (now - channel.lastStep >= interval) {
       channel.lastStep = now; digitalWrite(channel.stepPin, HIGH);
       delayMicroseconds(STEP_PULSE_US); digitalWrite(channel.stepPin, LOW);
+      if (channel.stepsRemaining > 0 && --channel.stepsRemaining == 0) {
+        channel.moving = false; channel.speed = 0;
+        Serial.print("STEP done "); Serial.println(channel.id);
+      }
     }
   }
 }
