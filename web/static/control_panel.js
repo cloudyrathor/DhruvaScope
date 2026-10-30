@@ -28,7 +28,9 @@ let catalogObjects = [];
 let visualTrackerState = {references: [], target: null};
 let calibrationState = {enabled: false, points: []};
 const visualNudgeSpeed = 0.03;
+const focusNudgeSpeed = 0.05;
 const nudgeStartedAt = {};
+const focusStepMs = 100;
 
 function showSection(sectionName) {
   document.querySelectorAll('.nav-item').forEach((item) => {
@@ -293,17 +295,20 @@ prepareVisualTarget.addEventListener('click', async () => {
 async function nudgeStart(button) {
   if (!visualTrackerEnabled.checked) { message.textContent = 'Enable Visual Tracker mode first.'; return; }
   try {
-    nudgeStartedAt[button.dataset.axis] = performance.now();
-    await api(`/api/motor/${button.dataset.axis}/move`, {
-      method: 'POST', body: JSON.stringify({direction: button.dataset.direction, speed: visualNudgeSpeed}),
+    const axis = button.dataset.axis;
+    nudgeStartedAt[axis] = performance.now();
+    const speed = axis === 'FOCUS' ? focusNudgeSpeed : visualNudgeSpeed;
+    await api(`/api/motor/${axis}/move`, {
+      method: 'POST', body: JSON.stringify({direction: button.dataset.direction, speed}),
     });
   } catch (error) { message.textContent = error.message; }
 }
 
 async function nudgeStop(axis) {
+  if (!['RA', 'DEC', 'FOCUS'].includes(axis)) return;
   try {
     await api(`/api/motor/${axis}/stop`, {method: 'POST'});
-    if (calibrationEnabled.checked && nudgeStartedAt[axis] != null) {
+    if (axis !== 'FOCUS' && calibrationEnabled.checked && nudgeStartedAt[axis] != null) {
       const button = document.querySelector('.nudge[data-axis="' + axis + '"]');
       await api('/api/calibration/motion', {method: 'POST', body: JSON.stringify({
         axis, direction: button.dataset.direction,
@@ -311,12 +316,16 @@ async function nudgeStop(axis) {
       })});
       delete nudgeStartedAt[axis];
     }
+    if (nudgeStartedAt[axis] != null) delete nudgeStartedAt[axis];
   } catch (error) { message.textContent = error.message; }
 }
 
 document.querySelectorAll('.nudge').forEach((button) => {
   if (button.dataset.action === 'stop') {
-    button.addEventListener('click', () => { nudgeStop('RA'); nudgeStop('DEC'); });
+    button.addEventListener('click', () => {
+      const axes = (button.dataset.axes || 'RA,DEC').split(',').map((axis) => axis.trim()).filter(Boolean);
+      axes.forEach((axis) => nudgeStop(axis));
+    });
     return;
   }
   button.addEventListener('pointerdown', (event) => { event.preventDefault(); button.setPointerCapture(event.pointerId); nudgeStart(button); });
@@ -325,7 +334,35 @@ document.querySelectorAll('.nudge').forEach((button) => {
   button.addEventListener('pointerleave', () => nudgeStop(button.dataset.axis));
 });
 
-trackerEmergencyStop.addEventListener('click', () => { nudgeStop('RA'); nudgeStop('DEC'); });
+const focusStepSize = document.querySelector('#focus-step-size');
+const focusSpeed = document.querySelector('#focus-speed');
+const focusStatus = document.querySelector('#focus-status');
+let focusTotal = 0;
+
+focusSpeed.addEventListener('input', () => { document.querySelector('#focus-speed-output').textContent = focusSpeed.value; });
+
+document.querySelectorAll('.pulse-step[data-direction]').forEach((button) => {
+  button.addEventListener('click', async () => {
+    if (!visualTrackerEnabled.checked) { message.textContent = 'Enable Visual Tracker mode first.'; return; }
+    const steps = Number(focusStepSize.value);
+    const direction = button.dataset.direction;
+    try {
+      await api('/api/motor/FOCUS/step', {method: 'POST', body: JSON.stringify({direction, steps, speed: Number(focusSpeed.value)})});
+      focusTotal += direction === 'POS' ? steps : -steps;
+      focusStatus.textContent = `Command sent: ${steps} step(s) ${direction === 'POS' ? 'out' : 'in'}. Net this session: ${focusTotal} steps.`;
+    } catch (error) { focusStatus.textContent = `Focuser error: ${error.message}`; message.textContent = `Focuser: ${error.message}`; }
+  });
+});
+
+document.querySelector('#focus-stop').addEventListener('click', async () => {
+  try { await api('/api/motor/FOCUS/stop', {method: 'POST'}); focusStatus.textContent = 'Focuser stopped.'; }
+  catch (error) { message.textContent = `Focuser: ${error.message}`; }
+});
+
+trackerEmergencyStop.addEventListener('click', async () => {
+  nudgeStop('RA'); nudgeStop('DEC');
+  try { await api('/api/motor/FOCUS/stop', {method: 'POST'}); } catch (error) { /* FOCUS may be unavailable */ }
+});
 
 catalogSelect.addEventListener('change', () => {
   const selected = catalogObjects.find((object) => object.id === catalogSelect.value);
