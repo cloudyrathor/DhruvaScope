@@ -1,5 +1,6 @@
 from typing import Any
 
+from ..core.errors import ConfigurationError
 from ..core.motor import MotorDirection, MotorState
 from ..core.telescope import TelescopeState
 from .base import TelescopeDevice
@@ -16,6 +17,13 @@ class MockDevice(TelescopeDevice):
         motor = self.state.motor(motor_id)
         motor.move(direction, speed)
         self.command_log.append(("MOVE", motor_id, direction.value))
+
+    def step(self, motor_id: str, direction: MotorDirection, steps: int, speed: float) -> None:
+        motor = self.state.motor(motor_id)
+        if not motor.enabled:
+            raise ConfigurationError(f"motor {motor_id} is disabled")
+        motor.stop()
+        self.command_log.append(("STEP", motor_id, steps if direction is MotorDirection.POS else -steps))
 
     def stop(self, motor_id: str) -> None:
         motor = self.state.motor(motor_id)
