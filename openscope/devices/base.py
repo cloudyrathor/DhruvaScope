@@ -28,5 +28,8 @@ class TelescopeDevice(ABC):
     @abstractmethod
     def disable(self, motor_id: str) -> None: ...
 
+    def step(self, motor_id: str, direction: MotorDirection, steps: int, speed: float) -> None:
+        raise NotImplementedError("this device does not support step moves")
+
     @abstractmethod
     def status(self) -> dict[str, Any]: ...
