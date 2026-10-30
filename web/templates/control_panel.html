@@ -140,11 +140,36 @@
           <div class="nudge-pad" aria-label="Visual tracker manual movement controls">
             <button class="nudge nudge-up" data-axis="DEC" data-direction="POS" aria-label="Move telescope up">▲</button>
             <button class="nudge nudge-left" data-axis="RA" data-direction="NEG" aria-label="Move telescope left">◀</button>
-            <button class="nudge nudge-stop" data-action="stop" aria-label="Stop manual movement">■</button>
+            <button class="nudge nudge-stop" data-action="stop" data-axes="RA,DEC" aria-label="Stop manual movement">■</button>
             <button class="nudge nudge-right" data-axis="RA" data-direction="POS" aria-label="Move telescope right">▶</button>
             <button class="nudge nudge-down" data-axis="DEC" data-direction="NEG" aria-label="Move telescope down">▼</button>
           </div>
           <div class="axis-legend"><span>DEC</span><span>RA</span></div>
+          <div class="focus-controls">
+            <div class="panel-title"><span class="panel-icon">◉</span><div><strong>Focuser</strong><small>Precise step-by-step focus</small></div></div>
+            <div class="focus-options">
+              <label>Step size
+                <select id="focus-step-size">
+                  <option value="1">1 step (finest)</option>
+                  <option value="5">5 steps</option>
+                  <option value="10">10 steps</option>
+                  <option value="50">50 steps</option>
+                  <option value="200">200 steps</option>
+                  <option value="1000" selected>1000 steps (same as diagnostic test)</option>
+                </select>
+              </label>
+              <label>Speed <output id="focus-speed-output">80</output> steps/s
+                <input id="focus-speed" type="range" min="10" max="200" step="10" value="80">
+              </label>
+            </div>
+            <div class="focus-pad" aria-label="Focus controls">
+              <button id="focus-in" type="button" class="pulse-step" data-direction="NEG" aria-label="Move focuser in">◀ IN</button>
+              <button id="focus-stop" type="button" class="pulse-step focus-stop" aria-label="Stop focuser">STOP</button>
+              <button id="focus-out" type="button" class="pulse-step" data-direction="POS" aria-label="Move focuser out">OUT ▶</button>
+            </div>
+            <p id="focus-status" class="hint">Each click moves the focuser by the selected number of steps.</p>
+          </div>
+
           <button id="tracker-emergency-stop" class="danger tracker-stop" type="button">Emergency stop</button>
         </div>
       </div>
