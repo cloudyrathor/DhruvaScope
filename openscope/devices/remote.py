@@ -25,6 +25,9 @@ class Esp32Device(TelescopeDevice):
     def move(self, motor_id: str, direction: MotorDirection, speed: float | None = None) -> None:
         self._request("MOVE", motor=motor_id, direction=direction.value, speed=speed or self.state.motor(motor_id).speed)
 
+    def step(self, motor_id: str, direction: MotorDirection, steps: int, speed: float) -> None:
+        self._request("STEP", motor=motor_id, direction=direction.value, steps=steps, speed=speed)
+
     def stop(self, motor_id: str) -> None:
         self._request("STOP", motor=motor_id)
 
