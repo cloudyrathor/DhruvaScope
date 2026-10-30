@@ -1,8 +1,10 @@
 from pathlib import Path
 from datetime import datetime, timezone
+import re
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from camera_control.astrophoto import ASTRO_TARGETS, apply_astrophoto_settings
 from openscope.configuration import load_yaml, telescope_state_from_config
 from openscope.catalog import list_catalog_objects, list_solar_system_objects, list_visible_catalog_objects
 from openscope.core.errors import ConfigurationError
@@ -17,7 +19,7 @@ from openscope.tracking.moon import MoonService
 from openscope.tracking.tracker import SiderealTracker
 from openscope.motion.controller import MotionController
 from openscope.motion.goto import GoToPlanner
-from openscope.camera import Camera, MockCamera, OpenCVCamera
+from openscope.camera import Camera, GPhotoCamera, MockCamera, OpenCVCamera
 
 DEFAULT_WIFI_HOST = "192.168.4.1"
 DEFAULT_WIFI_PORT = 9999
@@ -228,20 +230,118 @@ def create_app(config_path: str | Path | None = None, device=None, camera: Camer
 
     @app.post("/api/camera/open")
     def camera_open():
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        if data is None:
+            data = {}
+        elif not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "request body must be a JSON object"}), 400
         try:
             current = app.config["CAMERA"]
-            if data.get("type", "mock") == "opencv":
-                current.close()
+            camera_type = data.get("type", "mock")
+            if camera_type == "opencv":
                 source = data.get("source", 0)
                 source = int(source) if str(source).isdigit() else str(source)
-                current = OpenCVCamera(source)
-                app.config["CAMERA"] = current
-            elif data.get("type", "mock") != "mock":
-                raise ConfigurationError("camera type must be mock or opencv")
-            current.open()
-            return jsonify({"ok": True, "camera": current.status})
+                candidate = (
+                    current if isinstance(current, OpenCVCamera) and current.source == source
+                    else OpenCVCamera(source)
+                )
+            elif camera_type == "gphoto2":
+                candidate = current if isinstance(current, GPhotoCamera) else GPhotoCamera(
+                    app.config["CAMERA_CAPTURE_DIR"]
+                )
+            elif camera_type == "mock":
+                candidate = current if isinstance(current, MockCamera) else MockCamera()
+            else:
+                raise ConfigurationError("camera type must be mock, opencv, or gphoto2")
+
+            candidate.open()
+            if candidate is not current:
+                current.close()
+                app.config["CAMERA"] = candidate
+            return jsonify({"ok": True, "camera": candidate.status})
         except (ConfigurationError, DeviceError, TypeError, ValueError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.get("/api/camera/settings")
+    def camera_settings():
+        camera = app.config["CAMERA"]
+        if not isinstance(camera, GPhotoCamera) or not camera.status["open"]:
+            return jsonify({"ok": False, "error": "open a gphoto2 camera to inspect settings"}), 400
+        try:
+            return jsonify({"settings": camera.camera_settings()})
+        except DeviceError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/camera/settings")
+    def set_camera_settings():
+        data = request.get_json(silent=True)
+        settings = data.get("settings") if isinstance(data, dict) else None
+        camera = app.config["CAMERA"]
+        if not isinstance(camera, GPhotoCamera) or not camera.status["open"]:
+            return jsonify({"ok": False, "error": "open a gphoto2 camera before changing settings"}), 400
+        if (
+            not isinstance(settings, dict)
+            or not settings
+            or len(settings) > 32
+            or any(
+                not isinstance(name, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name)
+                or isinstance(value, bool)
+                or not isinstance(value, (str, int, float))
+                for name, value in settings.items()
+            )
+        ):
+            return jsonify({"ok": False, "error": "settings must be a non-empty object of supported setting names and values"}), 400
+        try:
+            normalized = {name: str(value) for name, value in settings.items()}
+            if not camera.set_settings(normalized):
+                return jsonify({"ok": False, "error": "camera rejected one or more settings"}), 400
+            return jsonify({"ok": True, "settings": normalized})
+        except DeviceError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.get("/api/astrophoto/targets")
+    def astrophoto_targets():
+        return jsonify(ASTRO_TARGETS)
+
+    @app.post("/api/astrophoto/capture")
+    def astrophoto_capture():
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "request body must be a JSON object"}), 400
+        target = data.get("target")
+        tracking_mode = data.get("tracking_mode", "untracked")
+        filename = data.get("filename", f"astro-{int(datetime.now(timezone.utc).timestamp())}")
+        if not isinstance(target, str) or target not in ASTRO_TARGETS:
+            return jsonify({"ok": False, "error": "select a valid astrophotography target"}), 400
+        if not isinstance(tracking_mode, str) or tracking_mode not in {"tracked", "untracked"}:
+            return jsonify({"ok": False, "error": "tracking_mode must be tracked or untracked"}), 400
+        if not isinstance(filename, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", filename):
+            return jsonify({"ok": False, "error": "filename must contain 1-64 letters, numbers, underscores, or hyphens"}), 400
+
+        camera = app.config["CAMERA"]
+        if not isinstance(camera, GPhotoCamera) or not camera.status["open"]:
+            return jsonify({"ok": False, "error": "open a gphoto2 DSLR before astrophotography capture"}), 400
+        if tracking_mode == "tracked" and not app.config["SIDEREAL_TRACKER"].running:
+            return jsonify({"ok": False, "error": "start sidereal mount tracking before using a tracked exposure"}), 400
+        try:
+            applied = apply_astrophoto_settings(camera.controller, target, tracking_mode)
+            if applied["status"] != "success":
+                return jsonify({"ok": False, "error": applied["message"], "settings": applied}), 400
+            capture = camera.capture(
+                app.config["CAMERA_CAPTURE_DIR"] / f"{filename}.jpg",
+                {
+                    "captured_by": "DhruvaScope",
+                    "target": target,
+                    "target_name": ASTRO_TARGETS[target]["name"],
+                    "tracking_mode": tracking_mode,
+                    "settings": applied["results"],
+                    "mount_alignment": state.alignment.as_dict(),
+                    "requested_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            return jsonify({"ok": True, "settings": applied, "capture": capture})
+        except (DeviceError, OSError, TypeError, ValueError, KeyError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
     @app.post("/api/camera/close")
@@ -251,14 +351,25 @@ def create_app(config_path: str | Path | None = None, device=None, camera: Camer
 
     @app.post("/api/camera/capture")
     def camera_capture():
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "error": "request body must be a JSON object"}), 400
         try:
             filename = Path(str(data.get("filename", "capture.jpg"))).name
             if Path(filename).suffix.lower() not in {".jpg", ".jpeg"}:
                 raise ConfigurationError("filename must end in .jpg or .jpeg")
+            metadata = data.get("metadata", {})
+            if not isinstance(metadata, dict):
+                raise ConfigurationError("metadata must be a JSON object")
             record = app.config["CAMERA"].capture(
                 app.config["CAMERA_CAPTURE_DIR"] / filename,
-                {"captured_by": "DhruvaScope", "requested_at": datetime.now(timezone.utc).isoformat(), **data.get("metadata", {})},
+                {
+                    **metadata,
+                    "captured_by": "DhruvaScope",
+                    "requested_at": datetime.now(timezone.utc).isoformat(),
+                    "mount_alignment": state.alignment.as_dict(),
+                    "mount_tracking": app.config["SIDEREAL_TRACKER"].status(),
+                },
             )
             return jsonify({"ok": True, "capture": record})
         except (ConfigurationError, DeviceError, TypeError, ValueError) as exc:
@@ -269,11 +380,37 @@ def create_app(config_path: str | Path | None = None, device=None, camera: Camer
         def frames():
             camera = app.config["CAMERA"]
             while camera.status["open"]:
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + camera.read() + b"\r\n"
+                try:
+                    frame = camera.read()
+                except DeviceError:
+                    app.logger.exception("Camera preview stream stopped after a frame error")
+                    break
+                yield (
+                    b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                    + str(len(frame)).encode("ascii")
+                    + b"\r\n\r\n"
+                    + frame
+                    + b"\r\n"
+                )
 
         if not app.config["CAMERA"].status["open"]:
             return jsonify({"ok": False, "error": "camera is not open"}), 400
         return Response(frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+    @app.get("/api/camera/preview")
+    def camera_preview():
+        camera = app.config["CAMERA"]
+        if not camera.status["open"]:
+            return jsonify({"ok": False, "error": "camera is not open"}), 400
+        try:
+            return Response(
+                camera.read(),
+                mimetype="image/jpeg",
+                headers={"Cache-Control": "no-store"},
+            )
+        except DeviceError as exc:
+            app.logger.exception("Camera preview request failed")
+            return jsonify({"ok": False, "error": str(exc)}), 400
 
     @app.get("/api/catalog/objects")
     def catalog_objects():
@@ -444,10 +581,42 @@ def create_app(config_path: str | Path | None = None, device=None, camera: Camer
         except (ConfigurationError, DeviceError, ValueError, TypeError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
+    @app.post("/api/motor/<motor_id>/step")
+    def step(motor_id: str):
+        data = request.get_json(silent=True) or {}
+        try:
+            direction = MotorDirection(data.get("direction", ""))
+            steps = int(data["steps"])
+            speed = float(data["speed"])
+            if not 1 <= steps <= 5000 or speed <= 0:
+                raise ConfigurationError("steps must be 1-5000 and speed must be positive")
+            print(f"[STEP] Sending {steps} steps to {motor_id} in {direction} @ {speed} steps/s")
+            app.config["TELESCOPE_DEVICE"].step(motor_id, direction, steps, speed)
+            return jsonify({"ok": True})
+        except (ConfigurationError, DeviceError, KeyError, NotImplementedError, ValueError, TypeError) as exc:
+            print(f"[STEP ERROR] {type(exc).__name__}: {exc}")
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
     @app.post("/api/motor/<motor_id>/stop")
     def stop(motor_id: str):
         try:
             app.config["TELESCOPE_DEVICE"].stop(motor_id)
+            return jsonify({"ok": True})
+        except (ConfigurationError, DeviceError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/motor/<motor_id>/enable")
+    def enable(motor_id: str):
+        try:
+            app.config["TELESCOPE_DEVICE"].enable(motor_id)
+            return jsonify({"ok": True})
+        except (ConfigurationError, DeviceError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+    @app.post("/api/motor/<motor_id>/disable")
+    def disable(motor_id: str):
+        try:
+            app.config["TELESCOPE_DEVICE"].disable(motor_id)
             return jsonify({"ok": True})
         except (ConfigurationError, DeviceError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
